@@ -1,0 +1,25 @@
+# Data, caches, model artifacts — never versioned
+data/
+
+# Secrets — .env.example IS versioned
+.env
+**/.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.conda/
+.ipynb_checkpoints/
+
+# Logs
+*.log
+logs/
+
+# OS / editor noise
+Thumbs.db
+.DS_Store
+
+# Local-only SDD state: external memory on disk, deliberately not versioned
+harness/
+docs/decisions.md
