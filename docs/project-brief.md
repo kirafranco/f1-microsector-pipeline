@@ -1,6 +1,6 @@
 # Project brief (original, as written 2026-08-21)
 
-> Kept verbatim as the founding document. Technical corrections and open decisions are tracked in [decisions.md](decisions.md); the buildable breakdown lives in `harness/feature_list.json`.
+> Kept verbatim as the founding document — **not as a statement of what the system currently is or does.** Several of its claims are known to be wrong or aspirational: there is no brake-pressure channel in FastF1 (`Brake` is boolean), there is no push event at race end (availability is polled), the processing is Spark in local mode rather than distributed, and the dashboard is Grafana rather than Superset. The corrected picture is in [../README.md](../README.md); the decision log and the feature breakdown are kept locally and are not versioned.
 
 # Formula 1 Post-Race Telemetry & Performance Engineering Pipeline
 
