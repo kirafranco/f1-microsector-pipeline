@@ -12,6 +12,7 @@ import pandas as pd
 
 from src.align import validation
 from src.align.circuits import official_lap_length_m
+from src.align.frame import RigidTransform, fit_corner_frame
 from src.align.merge import MergeError, build_lap_frame
 from src.align.track_reference import (
     DEFAULT_MIN_ANCHORS,
@@ -25,6 +26,9 @@ from src.config import INTERIM_ROOT
 
 logger = logging.getLogger(__name__)
 
+#: Laps pooled to form the driven-line cloud the frame is fitted against.
+FRAME_FIT_LAPS = 8
+
 
 @dataclass(frozen=True)
 class AlignmentResult:
@@ -35,6 +39,7 @@ class AlignmentResult:
     median_residual_m: float
     median_lap_length_m: float
     lap_length_error_pct: float
+    frame: RigidTransform
     registration_aligned: pd.DataFrame
     registration_raw: pd.DataFrame
 
@@ -67,6 +72,28 @@ def select_flying_laps(laps: pd.DataFrame) -> pd.DataFrame:
     return laps.loc[mask].reset_index(drop=True)
 
 
+def calibrate_frame(
+    reference: TrackReference,
+    frames: "list[pd.DataFrame]",
+    anchor_numbers: "list[int]",
+) -> tuple[TrackReference, RigidTransform]:
+    """Put corner coordinates into the telemetry's own frame.
+
+    Fitted on anchor corners only, so the held-out corners contribute nothing
+    to the calibration that their registration is later used to validate.
+    """
+    path = np.vstack([f[["x", "y"]].to_numpy(dtype=float) for f in frames[:FRAME_FIT_LAPS]])
+    anchors = reference.corners[reference.corners["number"].isin(anchor_numbers)]
+    transform = fit_corner_frame(anchors[["x", "y"]].to_numpy(dtype=float), path)
+
+    corrected = reference.corners.copy()
+    corrected[["x", "y"]] = transform.apply(corrected[["x", "y"]].to_numpy(dtype=float))
+    calibrated = TrackReference(
+        circuit=reference.circuit, corners=corrected, lap_length_m=reference.lap_length_m
+    )
+    return calibrated, transform
+
+
 def align_session(
     snapshot_root: Path,
     out_root: Path | None = None,
@@ -90,27 +117,38 @@ def align_session(
     car_groups = dict(tuple(car.groupby(["driver", "lap_number"], observed=True)))
     pos_groups = dict(tuple(pos.groupby(["driver", "lap_number"], observed=True)))
 
-    aligned_frames: list[pd.DataFrame] = []
-    raw_frames: list[pd.DataFrame] = []
-    anchor_rows: list[pd.DataFrame] = []
     rejected: list[dict] = []
+    merged: list[tuple] = []
 
+    # Pass 1: merge channels. The frame fit needs a driven-line cloud, so every
+    # lap must exist before any lap can be aligned.
     for lap in laps.itertuples(index=False):
         key = (lap.driver, lap.lap_number)
         if key not in car_groups or key not in pos_groups:
             rejected.append({"driver": lap.driver, "lap_number": lap.lap_number,
                              "reason": "no telemetry for this lap"})
             continue
-
         try:
-            frame = build_lap_frame(car_groups[key], pos_groups[key])
+            merged.append((lap, build_lap_frame(car_groups[key], pos_groups[key])))
         except MergeError as exc:
             rejected.append({"driver": lap.driver, "lap_number": lap.lap_number,
                              "reason": f"merge failed: {exc}"})
-            continue
 
+    if not merged:
+        raise RuntimeError(f"{snapshot_root}: no lap survived channel merge")
+
+    calibrated, transform = calibrate_frame(
+        reference, [frame for _, frame in merged], anchor_numbers
+    )
+
+    # Pass 2: align against the calibrated reference.
+    aligned_frames: list[pd.DataFrame] = []
+    raw_frames: list[pd.DataFrame] = []
+    anchor_rows: list[pd.DataFrame] = []
+
+    for lap, frame in merged:
         result: AlignedLap = align_lap(
-            frame, reference, min_anchors=min_anchors, anchor_corner_numbers=anchor_numbers
+            frame, calibrated, min_anchors=min_anchors, anchor_corner_numbers=anchor_numbers
         )
         if result.rejected:
             rejected.append({"driver": lap.driver, "lap_number": lap.lap_number,
@@ -135,10 +173,10 @@ def align_session(
     median_length = float(np.median(lap_lengths))
 
     registration_aligned = validation.measure_registration(
-        aligned_frames, reference, holdout_numbers, "distance_aligned"
+        aligned_frames, calibrated, holdout_numbers, "distance_aligned"
     )
     registration_raw = validation.measure_registration(
-        raw_frames, reference, holdout_numbers, "distance_raw"
+        raw_frames, calibrated, holdout_numbers, "distance_raw"
     )
 
     out_root = out_root or (INTERIM_ROOT / "aligned" / snapshot_root.name)
@@ -146,6 +184,18 @@ def align_session(
     telemetry.to_parquet(out_root / "telemetry_aligned.parquet", index=False)
     anchors_out.to_parquet(out_root / "anchors.parquet", index=False)
     rejected_out.to_parquet(out_root / "rejected_laps.parquet", index=False)
+    (out_root / "frame.json").write_text(
+        json.dumps(
+            {
+                "rotation_deg": transform.rotation_deg,
+                "translation_m": transform.translation.tolist(),
+                "median_residual_m": transform.median_residual_m,
+                "iterations": transform.iterations,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
 
     result = AlignmentResult(
         root=out_root,
@@ -157,6 +207,7 @@ def align_session(
         lap_length_error_pct=100.0
         * abs(median_length - reference.lap_length_m)
         / reference.lap_length_m,
+        frame=transform,
         registration_aligned=validation.summarise_registration(registration_aligned),
         registration_raw=validation.summarise_registration(registration_raw),
     )
