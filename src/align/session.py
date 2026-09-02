@@ -12,6 +12,7 @@ import pandas as pd
 
 from src.align import validation
 from src.align.circuits import official_lap_length_m
+from src.align.centreline import ReferenceLine, build_reference_line, project_lap
 from src.align.frame import RigidTransform, fit_corner_frame
 from src.align.merge import MergeError, build_lap_frame
 from src.align.track_reference import (
@@ -29,6 +30,17 @@ logger = logging.getLogger(__name__)
 #: Laps pooled to form the driven-line cloud the frame is fitted against.
 FRAME_FIT_LAPS = 8
 
+#: Default distance method.
+#:
+#: "projection" gives arc length along one shared reference line, so the axis is
+#: metrically true and independent of FastF1's corner Distance values -- which
+#: were measured to disagree with real arc length by std 21 m. "anchors" maps
+#: onto those corner distances instead; it scores comparably on cross-lap
+#: consistency because the corner error is systematic and every lap inherits it
+#: identically, but the resulting axis is a warp of true distance rather than
+#: distance. Both are kept so the comparison stays reproducible.
+DEFAULT_METHOD = "projection"
+
 
 @dataclass(frozen=True)
 class AlignmentResult:
@@ -40,8 +52,10 @@ class AlignmentResult:
     median_lap_length_m: float
     lap_length_error_pct: float
     frame: RigidTransform
-    registration_aligned: pd.DataFrame
-    registration_raw: pd.DataFrame
+    method: str
+    reference_line_lap: str
+    sector_aligned: pd.DataFrame
+    sector_raw: pd.DataFrame
 
     @property
     def aligned_fraction(self) -> float:
@@ -94,10 +108,29 @@ def calibrate_frame(
     return calibrated, transform
 
 
+def build_session_reference_line(
+    laps: pd.DataFrame, merged: "list[tuple]"
+) -> tuple[ReferenceLine, str]:
+    """Reference line from the session's fastest clean lap.
+
+    Any single consistent line satisfies the requirement -- what matters is that
+    every lap uses the same one -- but the fastest lap is deterministic and is
+    the least likely to contain an off-track excursion.
+    """
+    fastest = laps.loc[laps["lap_time"].idxmin()]
+    key = (fastest["driver"], fastest["lap_number"])
+    seed = next(
+        (f for row, f in merged if (row.driver, row.lap_number) == key), merged[0][1]
+    )
+    label = f"{key[0]} L{int(key[1])}"
+    return build_reference_line(seed[["x", "y"]].to_numpy(dtype=float)), label
+
+
 def align_session(
     snapshot_root: Path,
     out_root: Path | None = None,
     min_anchors: int = DEFAULT_MIN_ANCHORS,
+    method: str = DEFAULT_METHOD,
 ) -> AlignmentResult:
     """Align every flying lap in a raw snapshot and write the interim layer."""
     reference = load_track_reference(snapshot_root)
@@ -141,26 +174,36 @@ def align_session(
         reference, [frame for _, frame in merged], anchor_numbers
     )
 
-    # Pass 2: align against the calibrated reference.
+    # Pass 2: build the distance axis.
+    reference_line, reference_line_lap = build_session_reference_line(laps, merged)
     aligned_frames: list[pd.DataFrame] = []
     raw_frames: list[pd.DataFrame] = []
     anchor_rows: list[pd.DataFrame] = []
 
     for lap, frame in merged:
-        result: AlignedLap = align_lap(
-            frame, calibrated, min_anchors=min_anchors, anchor_corner_numbers=anchor_numbers
-        )
-        if result.rejected:
-            rejected.append({"driver": lap.driver, "lap_number": lap.lap_number,
-                             "reason": result.reject_reason})
-            continue
+        if method == "projection":
+            aligned = project_lap(frame, reference_line)
+            anchors = pd.DataFrame(
+                columns=["corner_number", "sample_index", "d_raw", "d_ref", "residual_m"]
+            )
+        elif method == "anchors":
+            result: AlignedLap = align_lap(
+                frame, calibrated, min_anchors=min_anchors, anchor_corner_numbers=anchor_numbers
+            )
+            if result.rejected:
+                rejected.append({"driver": lap.driver, "lap_number": lap.lap_number,
+                                 "reason": result.reject_reason})
+                continue
+            aligned, anchors = result.telemetry, result.anchors
+        else:
+            raise ValueError(f"unknown method {method!r}; expected 'projection' or 'anchors'")
 
-        aligned_frames.append(result.telemetry)
+        aligned_frames.append(aligned)
         raw_frames.append(frame)
-        anchors = result.anchors.copy()
-        anchors.insert(0, "lap_number", lap.lap_number)
-        anchors.insert(0, "driver", lap.driver)
-        anchor_rows.append(anchors)
+        tagged = anchors.copy()
+        tagged.insert(0, "lap_number", lap.lap_number)
+        tagged.insert(0, "driver", lap.driver)
+        anchor_rows.append(tagged)
 
     if not aligned_frames:
         raise RuntimeError(f"{snapshot_root}: no lap aligned ({len(rejected)} rejected)")
@@ -172,11 +215,16 @@ def align_session(
     lap_lengths = np.array([float(f["distance_aligned"].iloc[-1]) for f in aligned_frames])
     median_length = float(np.median(lap_lengths))
 
-    registration_aligned = validation.measure_registration(
-        aligned_frames, calibrated, holdout_numbers, "distance_aligned"
+    if method == "projection":
+        median_residual = float(np.median(telemetry["line_offset_m"]))
+    else:
+        median_residual = float(anchors_out["residual_m"].median())
+
+    sector_aligned = validation.summarise_sector_crossings(
+        validation.measure_sector_crossings(aligned_frames, laps, "distance_aligned")
     )
-    registration_raw = validation.measure_registration(
-        raw_frames, calibrated, holdout_numbers, "distance_raw"
+    sector_raw = validation.summarise_sector_crossings(
+        validation.measure_sector_crossings(raw_frames, laps, "distance_raw")
     )
 
     out_root = out_root or (INTERIM_ROOT / "aligned" / snapshot_root.name)
@@ -184,13 +232,20 @@ def align_session(
     telemetry.to_parquet(out_root / "telemetry_aligned.parquet", index=False)
     anchors_out.to_parquet(out_root / "anchors.parquet", index=False)
     rejected_out.to_parquet(out_root / "rejected_laps.parquet", index=False)
-    (out_root / "frame.json").write_text(
+    (out_root / "alignment_meta.json").write_text(
         json.dumps(
             {
-                "rotation_deg": transform.rotation_deg,
-                "translation_m": transform.translation.tolist(),
-                "median_residual_m": transform.median_residual_m,
-                "iterations": transform.iterations,
+                "method": method,
+                "reference_line_lap": reference_line_lap,
+                "reference_line_length_m": reference_line.total_length_m,
+                "official_lap_length_m": reference.lap_length_m,
+                "frame": {
+                    "rotation_deg": transform.rotation_deg,
+                    "translation_m": transform.translation.tolist(),
+                    "median_residual_m": transform.median_residual_m,
+                    "iterations": transform.iterations,
+                },
+                "sector_consistency": sector_aligned.to_dict("records"),
             },
             indent=2,
         ),
@@ -202,19 +257,22 @@ def align_session(
         laps_total=len(laps),
         laps_aligned=len(aligned_frames),
         laps_rejected=len(rejected),
-        median_residual_m=float(anchors_out["residual_m"].median()),
+        median_residual_m=median_residual,
         median_lap_length_m=median_length,
         lap_length_error_pct=100.0
         * abs(median_length - reference.lap_length_m)
         / reference.lap_length_m,
         frame=transform,
-        registration_aligned=validation.summarise_registration(registration_aligned),
-        registration_raw=validation.summarise_registration(registration_raw),
+        method=method,
+        reference_line_lap=reference_line_lap,
+        sector_aligned=sector_aligned,
+        sector_raw=sector_raw,
     )
 
     logger.info(
-        "alignment_complete aligned=%d/%d rejected=%d median_residual_m=%.2f "
+        "alignment_complete method=%s aligned=%d/%d rejected=%d median_residual_m=%.2f "
         "median_lap_length_m=%.1f error_pct=%.3f",
+        method,
         result.laps_aligned,
         result.laps_total,
         result.laps_rejected,

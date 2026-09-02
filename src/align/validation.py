@@ -69,6 +69,82 @@ def measure_registration(
     )
 
 
+def measure_sector_crossings(
+    laps_frames: "list[pd.DataFrame]",
+    laps: pd.DataFrame,
+    column: str = "distance_aligned",
+) -> pd.DataFrame:
+    """Distance at which each lap crosses its interior sector boundaries.
+
+    Sector boundaries are fixed physical points and their crossing *times* come
+    from timing data, so this validates the distance axis without reference to
+    corner geometry -- which is the component measured to be unreliable.
+
+    Only the two interior boundaries are used; the third is the finish line and
+    is definitionally the end of the lap.
+    """
+    indexed = laps.set_index(["driver", "lap_number"])
+    rows: list[dict] = []
+
+    for frame in laps_frames:
+        if frame.empty:
+            continue
+        driver = frame["driver"].iloc[0]
+        lap_number = int(frame["lap_number"].iloc[0])
+        if (driver, lap_number) not in indexed.index:
+            continue
+
+        record = indexed.loc[(driver, lap_number)]
+        start = record["lap_start_time"]
+        s1, s2 = record["sector1_time"], record["sector2_time"]
+        if any(pd.isna(value) for value in (start, s1, s2)):
+            continue
+
+        session_time = frame["session_time"].to_numpy(dtype=float)
+        distance = frame[column].to_numpy(dtype=float)
+
+        for label, crossing in (("S1", start + s1), ("S2", start + s1 + s2)):
+            if not (session_time[0] <= crossing <= session_time[-1]):
+                continue  # boundary falls outside this lap's telemetry window
+            rows.append(
+                {
+                    "driver": driver,
+                    "lap_number": lap_number,
+                    "boundary": label,
+                    "crossing_time_s": float(crossing),
+                    "distance_m": float(np.interp(crossing, session_time, distance)),
+                }
+            )
+
+    return pd.DataFrame(
+        rows, columns=["driver", "lap_number", "boundary", "crossing_time_s", "distance_m"]
+    )
+
+
+def summarise_sector_crossings(crossings: pd.DataFrame) -> pd.DataFrame:
+    """Per-boundary consistency: how tightly laps agree on where it is."""
+    if crossings.empty:
+        return pd.DataFrame(
+            columns=["boundary", "n_laps", "median_m", "p95_dev_m", "max_dev_m", "std_m"]
+        )
+
+    rows = []
+    for boundary, group in crossings.groupby("boundary"):
+        values = group["distance_m"]
+        deviation = (values - values.median()).abs()
+        rows.append(
+            {
+                "boundary": boundary,
+                "n_laps": len(group),
+                "median_m": float(values.median()),
+                "p95_dev_m": float(deviation.quantile(0.95)),
+                "max_dev_m": float(deviation.max()),
+                "std_m": float(values.std(ddof=0)),
+            }
+        )
+    return pd.DataFrame(rows).sort_values("boundary").reset_index(drop=True)
+
+
 def summarise_registration(observations: pd.DataFrame) -> pd.DataFrame:
     """Per-corner spread across laps: the 'same physical place' statistic."""
     if observations.empty:
