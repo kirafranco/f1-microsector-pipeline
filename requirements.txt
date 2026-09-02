@@ -1,0 +1,13 @@
+# Runtime dependencies — pinned exactly (global CLAUDE.md 3.5, reproducibility).
+#
+# Shared by the f1-microsector conda env (D3) and by the service images, so no
+# test-only package belongs here. Development tooling lives in
+# requirements-dev.txt and is installed only in the local env.
+#
+# Versions verified installed and passing tests on Python 3.12.14 in the
+# f1-microsector conda env (conda-forge channel).
+
+fastf1==3.8.3
+pandas==2.3.3
+numpy==2.4.6
+pyarrow==25.0.1

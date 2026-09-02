@@ -1,0 +1,8 @@
+# Local development and test dependencies.
+#
+# Installed in the f1-microsector conda env only — never baked into a service
+# image, which has no reason to carry a test runner.
+
+-r requirements.txt
+
+pytest==9.1.1
