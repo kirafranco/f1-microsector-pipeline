@@ -51,7 +51,13 @@ The original brief is kept verbatim in [docs/project-brief.md](docs/project-brie
 - **Per-project conda environment** for local development; every service containerised, with compose profiles because the full stack does not fit in laptop RAM at once.
 - **Two corrections to the brief, on the data itself:** FastF1's `Brake` channel is boolean, not pressure, so metrics are defined on brake application; and there is no push event at session end, so orchestration polls for availability with backoff.
 
-**Still open, and blocking the specs they touch:** the distance-reference method that makes a grid index mean the same physical place across laps and drivers; grid spacing and the sampling-resolution limit that bounds braking-point precision; the delta baseline; the definition of a micro-sector; the Airflow deployment shape; and ingestion scope.
+- **Corner-anchored distance alignment.** FastF1's distance channel is the time-integral of speed within a lap, so it carries the driver's line and the sensor's error — two drivers' lap totals differ by tens of metres, and a 30 m registration error is ~0.36 s at 300 km/h. Circuit corner positions are used as anchors and each lap's distance axis is rubber-banded between them, so a given grid index means the same physical point on track for every driver. Every downstream metric depends on this holding, so it is tested rather than assumed.
+- **A 10 m grid, with the resolution limit stated.** Car data samples at roughly 4 Hz — about 20–25 m between real samples at racing speed — so the grid deliberately oversamples the source. Interpolation does legitimate work for smooth channels, but braking-point precision is bounded at roughly ±20 m regardless, and `Brake` is boolean, so braking points are reported as a window rather than a number to the metre.
+- **Micro-sectors are corner phases** — braking, entry, apex, exit — derived from corner positions and the speed and brake traces, with fixed 100 m bins alongside as a secondary grain.
+- **The delta baseline is a parameter**, defaulting to the session fastest lap.
+- **First target: Suzuka 2024 Qualifying.** One event, one session, one driver pair. Generalisation across the 2024 season comes only after the validation suite passes on this one.
+
+All design decisions are currently settled; nothing in the plan is blocked on an open question.
 
 ## Repository layout
 
