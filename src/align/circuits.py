@@ -14,6 +14,18 @@ OFFICIAL_LAP_LENGTH_M: dict[str, float] = {
 }
 
 
+#: Criterion 2a: how far the aligned axis may drift from speed-integrated
+#: distance on the same laps. Both measure the driven path, so this isolates
+#: scale error from racing-line geometry.
+MAX_SCALE_ERROR_PCT: float = 1.0
+
+#: Criterion 2b: signed band for measured length against the official figure.
+#: Asymmetric on purpose -- a racing line cuts apexes and is always shorter than
+#: the centreline the official figure measures, so a *longer* result is a defect
+#: (scale error, or a wrap double-counting a section), not a driving style.
+OFFICIAL_LENGTH_BAND_PCT: tuple[float, float] = (-3.0, 0.2)
+
+
 class UnknownCircuitError(KeyError):
     """No official length recorded for this circuit."""
 

@@ -11,7 +11,11 @@ import numpy as np
 import pandas as pd
 
 from src.align import validation
-from src.align.circuits import official_lap_length_m
+from src.align.circuits import (
+    MAX_SCALE_ERROR_PCT,
+    OFFICIAL_LENGTH_BAND_PCT,
+    official_lap_length_m,
+)
 from src.align.centreline import ReferenceLine, build_reference_line, project_lap
 from src.align.frame import RigidTransform, fit_corner_frame
 from src.align.merge import MergeError, build_lap_frame
@@ -43,6 +47,42 @@ DEFAULT_METHOD = "projection"
 
 
 @dataclass(frozen=True)
+class LengthChecks:
+    """Criterion 2, split so each half tests one thing.
+
+    2a compares the aligned axis against speed-integrated distance -- both
+    measure the driven path, so it isolates scale error. 2b is a loose,
+    deliberately asymmetric sanity check against the official centreline figure.
+    """
+
+    aligned_m: float
+    driven_m: float
+    official_m: float
+
+    @property
+    def scale_error_pct(self) -> float:
+        return 100.0 * abs(self.aligned_m - self.driven_m) / self.driven_m
+
+    @property
+    def official_error_pct(self) -> float:
+        """Signed: negative means shorter than official, which is expected."""
+        return 100.0 * (self.aligned_m - self.official_m) / self.official_m
+
+    @property
+    def scale_ok(self) -> bool:
+        return self.scale_error_pct <= MAX_SCALE_ERROR_PCT
+
+    @property
+    def official_ok(self) -> bool:
+        low, high = OFFICIAL_LENGTH_BAND_PCT
+        return low <= self.official_error_pct <= high
+
+    @property
+    def ok(self) -> bool:
+        return self.scale_ok and self.official_ok
+
+
+@dataclass(frozen=True)
 class AlignmentResult:
     root: Path
     laps_total: int
@@ -50,7 +90,7 @@ class AlignmentResult:
     laps_rejected: int
     median_residual_m: float
     median_lap_length_m: float
-    lap_length_error_pct: float
+    length: LengthChecks
     frame: RigidTransform
     method: str
     reference_line_lap: str
@@ -214,6 +254,12 @@ def align_session(
 
     lap_lengths = np.array([float(f["distance_aligned"].iloc[-1]) for f in aligned_frames])
     median_length = float(np.median(lap_lengths))
+    driven_lengths = np.array([float(f["distance_raw"].iloc[-1]) for f in raw_frames])
+    length = LengthChecks(
+        aligned_m=median_length,
+        driven_m=float(np.median(driven_lengths)),
+        official_m=reference.lap_length_m,
+    )
 
     if method == "projection":
         median_residual = float(np.median(telemetry["line_offset_m"]))
@@ -239,6 +285,14 @@ def align_session(
                 "reference_line_lap": reference_line_lap,
                 "reference_line_length_m": reference_line.total_length_m,
                 "official_lap_length_m": reference.lap_length_m,
+                "length_checks": {
+                    "aligned_m": length.aligned_m,
+                    "driven_m": length.driven_m,
+                    "scale_error_pct": length.scale_error_pct,
+                    "official_error_pct": length.official_error_pct,
+                    "scale_ok": length.scale_ok,
+                    "official_ok": length.official_ok,
+                },
                 "frame": {
                     "rotation_deg": transform.rotation_deg,
                     "translation_m": transform.translation.tolist(),
@@ -259,9 +313,7 @@ def align_session(
         laps_rejected=len(rejected),
         median_residual_m=median_residual,
         median_lap_length_m=median_length,
-        lap_length_error_pct=100.0
-        * abs(median_length - reference.lap_length_m)
-        / reference.lap_length_m,
+        length=length,
         frame=transform,
         method=method,
         reference_line_lap=reference_line_lap,
@@ -271,13 +323,14 @@ def align_session(
 
     logger.info(
         "alignment_complete method=%s aligned=%d/%d rejected=%d median_residual_m=%.2f "
-        "median_lap_length_m=%.1f error_pct=%.3f",
+        "median_lap_length_m=%.1f scale_error_pct=%.3f official_error_pct=%+.3f",
         method,
         result.laps_aligned,
         result.laps_total,
         result.laps_rejected,
         result.median_residual_m,
         result.median_lap_length_m,
-        result.lap_length_error_pct,
+        length.scale_error_pct,
+        length.official_error_pct,
     )
     return result
