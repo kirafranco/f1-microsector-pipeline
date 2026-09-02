@@ -14,6 +14,7 @@ Post-race F1 telemetry pipeline: FastF1 ingestion → 10 m spatial resampling �
 
 ## Project conventions
 
+- **Credentials.** Every credential lives in `servicios/.env`, which is gitignored (`**/.env`) and never committed. `servicios/.env.example` is versioned, carries the same keys with `CHANGE_ME` placeholders only, and is updated in the same commit as `.env`. No credential is ever written into a compose file, Dockerfile, image layer, notebook, source file, or test — configuration is injected at runtime. FastF1 and Jolpica-F1 are unauthenticated by design; a source demanding credentials would breach the free-and-trusted source policy and needs sign-off before use.
 - FastF1 cache path: `data/cache/fastf1` — enabled before any session load, no exceptions.
 - Raw snapshots: `data/raw/fastf1/<snapshot-date>/`, immutable.
 - Discrete telemetry channels (`nGear`, `Brake`, `DRS`) are never linearly interpolated — step/previous only.
