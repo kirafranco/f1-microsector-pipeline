@@ -151,6 +151,26 @@ S2_M = 2000.0
 #: Official lap time is grid time plus this constant; S1 carries an extra offset.
 LAP_TIME_OFFSET_S = 0.2
 S1_OFFSET_S = 0.1
+#: Session clock at each lap's first sample.
+SESSION_T0 = 1000.0
+#: Official circuit length: a little longer than the driven path, as in reality.
+OFFICIAL_LENGTH_M = 3020.0
+
+
+def aligned_telemetry(grid_frame: pd.DataFrame | None = None) -> pd.DataFrame:
+    """F008-shaped aligned telemetry for the designed session.
+
+    The synthetic path *is* the reference line, so `distance_raw` and
+    `distance_aligned` coincide; `session_time` runs from `SESSION_T0`.
+    """
+    g = grid() if grid_frame is None else grid_frame
+    out = g[["driver", "lap_number", "speed", "throttle", "n_gear", "brake", "drs", "x", "y"]].copy()
+    out["session_time"] = SESSION_T0 + g["elapsed_time"].astype(float)
+    out["distance_raw"] = g["distance_m"].astype(float)
+    out["distance_aligned"] = g["distance_m"].astype(float)
+    out["line_offset_m"] = 0.0
+    out["z"] = 0.0
+    return out
 
 
 def frame_meta() -> dict:
@@ -162,6 +182,8 @@ def frame_meta() -> dict:
             "median_residual_m": 0.5,
             "iterations": 5,
         },
+        "reference_line_length_m": LAP_LENGTH_M,
+        "official_lap_length_m": OFFICIAL_LENGTH_M,
         "sector_consistency": [
             {"boundary": "S1", "n_laps": 4, "median_m": S1_M, "p95_dev_m": 0.0, "max_dev_m": 0.0, "std_m": 0.0},
             {"boundary": "S2", "n_laps": 4, "median_m": S2_M, "p95_dev_m": 0.0, "max_dev_m": 0.0, "std_m": 0.0},
@@ -175,6 +197,11 @@ def official_laps(grid_frame: pd.DataFrame | None = None) -> pd.DataFrame:
     ``lap_time = grid_time + LAP_TIME_OFFSET_S`` (a constant window offset, as
     in the real data), ``sector2_time`` is exactly the grid time between the
     S1 and S2 lines, and ``sector1_time`` carries an extra ``S1_OFFSET_S``.
+
+    ``lap_start_time`` puts the timing line half the offset before the first
+    sample, so the line sits symmetrically outside the axis at both ends: F004,
+    whose curves start at grid 0, sees the S1 offset; F010, which starts at the
+    line itself, sees no residual at all.
     """
     g = grid() if grid_frame is None else grid_frame
     i1, i2 = int(S1_M / GRID_M), int(S2_M / GRID_M)
@@ -188,7 +215,8 @@ def official_laps(grid_frame: pd.DataFrame | None = None) -> pd.DataFrame:
         rows.append(
             dict(driver=str(driver), driver_number="1", team="Synthetic", lap_number=int(lap_number),
                  lap_time=lap_time, sector1_time=s1, sector2_time=s2, sector3_time=lap_time - s1 - s2,
-                 lap_start_time=0.0, pit_in_time=np.nan, pit_out_time=np.nan, stint=1, compound="SOFT",
+                 lap_start_time=SESSION_T0 - LAP_TIME_OFFSET_S / 2, pit_in_time=np.nan, pit_out_time=np.nan,
+                 stint=1, compound="SOFT",
                  tyre_life=int(lap_number), fresh_tyre=True, track_status="1", is_accurate=True)
         )
     frame = pd.DataFrame(rows)
@@ -244,6 +272,7 @@ def write_session(root: Path) -> tuple[Path, Path, Path]:
     for path in (grid_root, snapshot_root, aligned_root):
         path.mkdir(parents=True, exist_ok=True)
     grid().to_parquet(grid_root / "grid.parquet", index=False)
+    aligned_telemetry().to_parquet(aligned_root / "telemetry_aligned.parquet", index=False)
     raw_corners().to_parquet(snapshot_root / "circuit_corners.parquet", index=False)
     (aligned_root / "alignment_meta.json").write_text(json.dumps(frame_meta()), encoding="utf-8")
     return grid_root, snapshot_root, aligned_root
