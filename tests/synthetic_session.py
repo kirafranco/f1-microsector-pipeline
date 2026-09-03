@@ -145,6 +145,14 @@ def grid(drivers: tuple[str, ...] = ("AAA", "BBB"), laps_per_driver: int = 2, la
     return pd.concat(frames, ignore_index=True).astype(GRID_SCHEMA)
 
 
+#: Marshalling-sector lines on the synthetic axis, used by the F004 checks.
+S1_M = 1000.0
+S2_M = 2000.0
+#: Official lap time is grid time plus this constant; S1 carries an extra offset.
+LAP_TIME_OFFSET_S = 0.2
+S1_OFFSET_S = 0.1
+
+
 def frame_meta() -> dict:
     return {
         "reference_line_lap": f"{REFERENCE_LAP[0]} L{REFERENCE_LAP[1]}",
@@ -154,6 +162,56 @@ def frame_meta() -> dict:
             "median_residual_m": 0.5,
             "iterations": 5,
         },
+        "sector_consistency": [
+            {"boundary": "S1", "n_laps": 4, "median_m": S1_M, "p95_dev_m": 0.0, "max_dev_m": 0.0, "std_m": 0.0},
+            {"boundary": "S2", "n_laps": 4, "median_m": S2_M, "p95_dev_m": 0.0, "max_dev_m": 0.0, "std_m": 0.0},
+        ],
+    }
+
+
+def official_laps(grid_frame: pd.DataFrame | None = None) -> pd.DataFrame:
+    """A ``laps.parquet``-shaped table whose official times derive from the grid.
+
+    ``lap_time = grid_time + LAP_TIME_OFFSET_S`` (a constant window offset, as
+    in the real data), ``sector2_time`` is exactly the grid time between the
+    S1 and S2 lines, and ``sector1_time`` carries an extra ``S1_OFFSET_S``.
+    """
+    g = grid() if grid_frame is None else grid_frame
+    i1, i2 = int(S1_M / GRID_M), int(S2_M / GRID_M)
+    rows = []
+    for (driver, lap_number), lap in g.groupby(["driver", "lap_number"], observed=True):
+        t = lap.sort_values("grid_index")["elapsed_time"].to_numpy(dtype=float)
+        t = t - t[0]
+        lap_time = float(t[-1]) + LAP_TIME_OFFSET_S
+        s1 = float(t[i1]) + S1_OFFSET_S
+        s2 = float(t[i2] - t[i1])
+        rows.append(
+            dict(driver=str(driver), driver_number="1", team="Synthetic", lap_number=int(lap_number),
+                 lap_time=lap_time, sector1_time=s1, sector2_time=s2, sector3_time=lap_time - s1 - s2,
+                 lap_start_time=0.0, pit_in_time=np.nan, pit_out_time=np.nan, stint=1, compound="SOFT",
+                 tyre_life=int(lap_number), fresh_tyre=True, track_status="1", is_accurate=True)
+        )
+    frame = pd.DataFrame(rows)
+    return frame.astype(
+        {"driver": "string", "driver_number": "string", "team": "string", "lap_number": "Int16",
+         "stint": "Int16", "compound": "string", "tyre_life": "Int16", "fresh_tyre": "boolean",
+         "track_status": "string", "is_accurate": "boolean"}
+    )
+
+
+def write_full_session(root: Path) -> dict[str, Path]:
+    """Grid, snapshot (corners + laps), aligned meta and F009 micro-sectors under ``root``."""
+    from src.segment.session import segment_session
+
+    grid_root, snapshot_root, aligned_root = write_session(root)
+    official_laps().to_parquet(snapshot_root / "laps.parquet", index=False)
+    microsector_root = root / "microsectors" / "synthetic"
+    segment_session(grid_root, snapshot_root, aligned_root, out_root=microsector_root)
+    return {
+        "grid_root": grid_root,
+        "snapshot_root": snapshot_root,
+        "aligned_root": aligned_root,
+        "microsector_root": microsector_root,
     }
 
 
