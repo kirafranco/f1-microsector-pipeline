@@ -99,7 +99,7 @@ docker compose --profile core down
 | `pipeline` | Spark | F013 |
 | `orchestration` | Airflow | F006 |
 
-Everything persists in bind mounts under `data/` (gitignored), so copying the project folder carries the databases with it. Postgres is reachable from the conda environment on `127.0.0.1:55432` and Grafana on `127.0.0.1:3000`; neither is exposed beyond loopback. Grafana connects through a read-only role and its datasource and dashboards are provisioned from files in `servicios/grafana/provisioning/`. The standards the compose file must obey are asserted by tests that run without Docker; `pytest -m docker` brings the stack up and checks health, permissions, persistence and limits on the real daemon.
+Everything persists in bind mounts under `data/` (gitignored), so copying the project folder carries the databases with it. Which host interface each port is published on is a per-machine setting in `.env`: by default Postgres binds to `127.0.0.1:55432`, since only the conda environment on the same machine ever queries it, while Grafana binds to `0.0.0.0:3000` so the dashboard opens from other devices on the local network. Set `GRAFANA_BIND_ADDRESS=127.0.0.1` on a machine that should keep it local. Grafana connects through a read-only role and its datasource and dashboards are provisioned from files in `servicios/grafana/provisioning/`. The standards the compose file must obey are asserted by tests that run without Docker; `pytest -m docker` brings the stack up and checks health, permissions, persistence and limits on the real daemon.
 
 ## Data sources
 

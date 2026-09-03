@@ -38,8 +38,10 @@ services:
       TZ: UTC
       PGTZ: UTC
     ports:
-      # Loopback only: the conda env (D3) reaches the database, nothing else does.
-      - "127.0.0.1:${POSTGRES_PORT}:5432"
+      # Bind address is a per-machine setting in .env. Default 127.0.0.1: only the
+      # conda env on this laptop (D3) queries the database, so it never needs to
+      # be reachable from other devices.
+      - "${POSTGRES_BIND_ADDRESS}:${POSTGRES_PORT}:5432"
     volumes:
       # The 18 image keeps its cluster at /var/lib/postgresql/18/docker.
       - ../data/postgres:/var/lib/postgresql
@@ -81,7 +83,9 @@ services:
       POSTGRES_READONLY_PASSWORD: ${POSTGRES_READONLY_PASSWORD}
       TZ: UTC
     ports:
-      - "127.0.0.1:${GRAFANA_PORT}:3000"
+      # Default 0.0.0.0 so the dashboard opens from other devices on the home
+      # network; set 127.0.0.1 in .env on a machine that should keep it local.
+      - "${GRAFANA_BIND_ADDRESS}:${GRAFANA_PORT}:3000"
     volumes:
       - ../data/grafana:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro

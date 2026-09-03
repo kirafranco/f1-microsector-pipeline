@@ -2,7 +2,7 @@
 
 These tests never start Docker. They read `servicios/` and check that what is
 written there obeys the standards in the global CLAUDE.md -- bind mounts only,
-pinned images, profiles, limits, loopback ports, no credential anywhere.
+pinned images, profiles, limits, bind addresses as settings, no credential anywhere.
 """
 
 from __future__ import annotations
@@ -145,10 +145,25 @@ class TestRuntimePolicy:
         assert depends["postgres"]["condition"] == "service_healthy"
         assert "healthcheck" in services["grafana"]
 
-    def test_host_ports_are_loopback_only(self, services: dict) -> None:
+    def test_host_bind_addresses_are_settings_not_literals(self, services: dict) -> None:
+        """Which interface a port is published on differs between an office
+        machine and a home one, so it lives in .env, never in the compose file."""
         for name, service in services.items():
             for mapping in service.get("ports", []):
-                assert mapping.startswith("127.0.0.1:"), f"{name}: {mapping!r} is exposed beyond loopback"
+                bind, _, rest = mapping.partition(":")
+                assert VAR_PATTERN.fullmatch(bind), f"{name}: bind address {bind!r} is a literal"
+                assert bind.upper().endswith("_BIND_ADDRESS}"), f"{name}: {bind!r} is not a *_BIND_ADDRESS setting"
+
+    def test_database_stays_on_the_machine_by_default(self) -> None:
+        """Only the conda env queries Postgres (D3); Grafana may be opened from
+        other devices at home, the database never needs to be."""
+        values = {
+            line.split("=", 1)[0].strip(): line.split("=", 1)[1].strip()
+            for line in ENV_EXAMPLE.read_text(encoding="utf-8").splitlines()
+            if "=" in line and not line.strip().startswith("#")
+        }
+        assert values["POSTGRES_BIND_ADDRESS"] == "127.0.0.1"
+        assert values["GRAFANA_BIND_ADDRESS"] in {"0.0.0.0", "127.0.0.1"}
 
 
 class TestCredentials:
