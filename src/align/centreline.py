@@ -171,11 +171,59 @@ def enforce_monotonic(distance: np.ndarray) -> tuple[np.ndarray, int]:
     return corrected, int((corrected != distance).sum())
 
 
+def extend_axis_ends(frame: pd.DataFrame, line_length_m: float) -> pd.DataFrame:
+    """Replace clamped runs at both ends of the axis with raw-distance extension.
+
+    Samples that lie before the reference line's first vertex or after its last
+    one all project onto that vertex, so they share one distance (0 or the line
+    length). Measured on Suzuka 2024 Q (F010): 72 of 74 laps carry such a run
+    at the start and 62 at the end, and downstream resampling then places the
+    lap's time origin up to one sample interval early and its end one late --
+    a systematic +0.12 s on every reconstructed lap time.
+
+    The fix continues the axis beyond the line with `distance_raw`, the
+    speed-integrated distance the alignment already trusts:
+    ``d = d_anchor -/+ (raw_anchor - raw)`` from the nearest unclamped sample.
+    Interior flat runs left by the monotonic guard are not touched. Frames
+    without `distance_raw` are returned unchanged.
+    """
+    if "distance_raw" not in frame.columns or len(frame) < 2:
+        return frame
+    distance = frame["distance_aligned"].to_numpy(dtype=float).copy()
+    raw = frame["distance_raw"].to_numpy(dtype=float)
+    n = len(distance)
+    leading = trailing = 0
+
+    if distance[0] <= 1e-9:
+        k = int(np.argmax(distance > distance[0]))
+        if 0 < k < n:
+            distance[:k] = distance[k] - (raw[k] - raw[:k])
+            leading = k
+
+    if distance[-1] >= line_length_m - 1e-6:
+        reversed_ = distance[::-1]
+        k = int(np.argmax(reversed_ < reversed_[0]))
+        if 0 < k < n:
+            j = n - 1 - k
+            distance[j + 1 :] = distance[j] + (raw[j + 1 :] - raw[j])
+            trailing = k
+
+    if leading or trailing:
+        logger.debug("axis_extended leading=%d trailing=%d", leading, trailing)
+    out = frame.copy()
+    out["distance_aligned"] = distance
+    return out
+
+
 def project_lap(frame: pd.DataFrame, line: ReferenceLine) -> pd.DataFrame:
-    """Add `distance_aligned` and `line_offset_m` to one merged lap frame."""
+    """Add `distance_aligned` and `line_offset_m` to one merged lap frame.
+
+    Projection, then the monotonic guard, then the axis is extended past the
+    reference line's ends with raw distance instead of being clamped there.
+    """
     distance, offset = project_onto_line(frame[["x", "y"]].to_numpy(dtype=float), line)
     distance, _ = enforce_monotonic(distance)
     out = frame.copy()
     out["distance_aligned"] = distance
     out["line_offset_m"] = offset
-    return out
+    return extend_axis_ends(out, line.total_length_m)
