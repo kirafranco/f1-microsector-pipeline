@@ -1,0 +1,10 @@
+# Files that run inside Linux containers must keep LF endings regardless of
+# the checkout machine: a CRLF in a shell script breaks bash in the container
+# ("$'': command not found"). Windows checkouts here convert to CRLF by
+# default, so this is enforced rather than assumed.
+*.sh    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.sql   text eol=lf
+Dockerfile text eol=lf
+.env.example text eol=lf

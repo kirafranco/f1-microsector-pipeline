@@ -1,0 +1,16 @@
+# Dashboard provider (global CLAUDE.md 2.2): dashboards are versioned JSON on
+# disk, not UI state. F007 drops its pit-wall dashboard into ./json/ and it is
+# loaded on the next start.
+apiVersion: 1
+
+providers:
+  - name: f1-microsector
+    orgId: 1
+    type: file
+    disableDeletion: false
+    # Edits made in the UI are overwritten from disk: the file is the truth.
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/provisioning/dashboards/json
+      foldersFromFilesStructure: true

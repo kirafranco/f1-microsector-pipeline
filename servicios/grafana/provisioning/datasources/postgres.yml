@@ -1,0 +1,33 @@
+# Grafana datasource, provisioned as code (global CLAUDE.md 2.2).
+#
+# A datasource configured only in the UI does not exist. Every value comes from
+# the environment, so no credential is ever written into this file.
+#
+# The connection uses the read-only role and reaches Postgres by service name
+# on the compose network — never localhost, never an IP.
+apiVersion: 1
+
+datasources:
+  - name: f1-postgres
+    # Stable uid: F007's dashboard JSON references it, so it must not change.
+    uid: f1-postgres
+    # Grafana 10+ plugin id; the legacy alias "postgres" is accepted on input
+    # but reported under this id, so the tests and the file agree on one name.
+    type: grafana-postgresql-datasource
+    access: proxy
+    url: ${POSTGRES_HOST}:5432
+    database: ${POSTGRES_DB}
+    user: ${POSTGRES_READONLY_USER}
+    isDefault: true
+    editable: false
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1800
+      timescaledb: false
+      # The distance axis is not time, so dashboards must not rely on a
+      # default time filter; F007 uses Trend panels (decision D1).
+      maxOpenConns: 4
+      maxIdleConns: 2
+      connMaxLifetime: 14400
+    secureJsonData:
+      password: ${POSTGRES_READONLY_PASSWORD}

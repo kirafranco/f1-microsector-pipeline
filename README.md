@@ -81,6 +81,26 @@ Spec-driven development state — the feature list, per-feature specs, progress 
 - **Local dev:** per-project conda environment created from the Anaconda Prompt (miniconda), e.g. `conda create -n f1-microsector python=3.12`. Dependencies are pinned in `requirements.txt` once the first feature is spec'd.
 - **Services:** Postgres, Spark, Airflow, and Grafana run as Docker containers under `servicios/` (bind mounts only, custom bridge network, config via `.env`). Compose profiles are mandatory — the full stack does not fit in laptop RAM at once.
 
+## Running the stack
+
+Services live under `servicios/` and run with Docker Compose, one profile at a time (the full stack does not fit in RAM alongside Windows and Docker Desktop):
+
+```
+cd servicios
+cp .env.example .env          # then replace every CHANGE_ME; generate passwords, do not invent them
+docker compose --profile core up -d
+docker compose --profile core down
+```
+
+| Profile | Services | Feature |
+|---|---|---|
+| `core` | Postgres 18, Grafana 12 | F001 |
+| `dev` | Jupyter | F014 |
+| `pipeline` | Spark | F013 |
+| `orchestration` | Airflow | F006 |
+
+Everything persists in bind mounts under `data/` (gitignored), so copying the project folder carries the databases with it. Postgres is reachable from the conda environment at `localhost:55432` and Grafana opens at `http://localhost:3000`. `localhost` works on any network or none, because that traffic never leaves the machine. The interface each port is published on is a per-machine setting in `.env` (`*_BIND_ADDRESS`, default `127.0.0.1`, which is `localhost`); set it to `0.0.0.0` only to reach a service from another device on the same Wi-Fi. Grafana connects through a read-only role and its datasource and dashboards are provisioned from files in `servicios/grafana/provisioning/`. The standards the compose file must obey are asserted by tests that run without Docker; `pytest -m docker` brings the stack up and checks health, permissions, persistence and limits on the real daemon.
+
 ## Data sources
 
 - [FastF1](https://docs.fastf1.dev/) — primary source: telemetry, laps, tyre stints, weather, circuit info (2018+). Cache enabled at `data/cache/fastf1` before any session load.
