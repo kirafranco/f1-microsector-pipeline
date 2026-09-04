@@ -11,6 +11,7 @@ Post-race F1 telemetry pipeline: FastF1 ingestion → 10 m spatial resampling �
 - **Local dev environment (decision D3):** a per-project conda env (`f1-microsector`), created by Kira from the Anaconda Prompt (miniconda), is the declared exception to global §2 for local development, notebooks, and harness tooling. Services and pipeline runs remain containerized under `servicios/`. Dependencies pinned in `requirements.txt`, shared by the conda env and service images.
 - **SDD state is local-only (decision D11):** `harness/` and `docs/decisions.md` are gitignored deliberately. Global §1 requires this state in physical files, not in git, so the standard holds — but there is no history and no remote backup for `feature_list.json`, `specs/`, `progress/`, or the decision log. Anything that must survive a fresh clone goes in `README.md`, `CLAUDE.md`, or `docs/project-brief.md`.
 - **Compose profiles are mandatory (decision D9):** the full stack is ~15 GB if every service runs. Profiles: `core` (postgres, grafana), `dev` (jupyter), `pipeline` (spark), `orchestration` (airflow). Never bring up more than the task needs.
+- **graphify is developer tooling, not a dependency (decision D12):** the repo knowledge graph tool is installed on the host through `pipx` (`graphifyy==0.9.53`, isolated, pinned) under the global §2 dev-tooling exception, and never enters `requirements.txt` or a service image. Its skill and hooks are project-scoped under `.claude/` and versioned; its output `graphify-out/` is generated and gitignored, rebuilt with `graphify update .`. Code parsing is local; no API key is configured and the hosted platform is not used. The `## graphify` section below is written by the tool itself.
 
 ## Project conventions
 
@@ -24,3 +25,13 @@ Post-race F1 telemetry pipeline: FastF1 ingestion → 10 m spatial resampling �
 - **The dashboard is a read-only consumer (decision D1).** No dashboard-specific columns, views, or naming in the schema; it must serve Grafana, Superset, or FastAPI equally.
 - `grid_index` is only meaningful under the distance-reference method chosen in D5 — its semantics ship with the schema documentation, alongside the D6 sampling-resolution limit.
 - Harness state machine per global §5; no code in `src/`, `tests/`, or `servicios/` while the feature is `pending` or `spec_ready`.
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).

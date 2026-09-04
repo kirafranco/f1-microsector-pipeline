@@ -23,3 +23,6 @@ Thumbs.db
 # Local-only SDD state: external memory on disk, deliberately not versioned
 harness/
 docs/decisions.md
+
+# graphify knowledge graph: generated from the repo, rebuilt with `graphify update .`
+graphify-out/
