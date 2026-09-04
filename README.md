@@ -80,6 +80,7 @@ Spec-driven development state — the feature list, per-feature specs, progress 
 
 - **Local dev:** per-project conda environment created from the Anaconda Prompt (miniconda), e.g. `conda create -n f1-microsector python=3.12`. Dependencies are pinned in `requirements.txt` once the first feature is spec'd.
 - **Services:** Postgres, Spark, Airflow, and Grafana run as Docker containers under `servicios/` (bind mounts only, custom bridge network, config via `.env`). Compose profiles are mandatory — the full stack does not fit in laptop RAM at once.
+- **Repo knowledge graph:** [graphify](https://github.com/Graphify-Labs/graphify) is installed as developer tooling (`pipx install graphifyy==0.9.53`) and registered as a project-scoped Claude Code skill under `.claude/`. `graphify update .` rebuilds `graphify-out/` (gitignored) from the code in seconds, locally, with no API key; `/graphify .` inside Claude Code adds the semantic pass over the docs. It is a navigation aid for working on the code, never a pipeline dependency.
 
 ## Running the stack
 
