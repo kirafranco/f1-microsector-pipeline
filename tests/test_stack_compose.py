@@ -154,17 +154,16 @@ class TestRuntimePolicy:
                 assert VAR_PATTERN.fullmatch(bind), f"{name}: bind address {bind!r} is a literal"
                 assert bind.upper().endswith("_BIND_ADDRESS}"), f"{name}: {bind!r} is not a *_BIND_ADDRESS setting"
 
-    def test_bind_address_defaults_are_valid_interfaces(self) -> None:
-        """Both services publish on the home network by default (Kira's call:
-        this is a personal project, queried and viewed from other devices); a
-        machine that should keep either local sets 127.0.0.1 in its .env."""
+    def test_services_default_to_localhost(self) -> None:
+        """127.0.0.1 is localhost: it works on any network or none, and nothing
+        is reachable from other devices unless a machine's own .env says so."""
         values = {
             line.split("=", 1)[0].strip(): line.split("=", 1)[1].strip()
             for line in ENV_EXAMPLE.read_text(encoding="utf-8").splitlines()
             if "=" in line and not line.strip().startswith("#")
         }
         for key in ("POSTGRES_BIND_ADDRESS", "GRAFANA_BIND_ADDRESS"):
-            assert values[key] in {"0.0.0.0", "127.0.0.1"}, key
+            assert values[key] == "127.0.0.1", key
 
 
 class TestCredentials:
