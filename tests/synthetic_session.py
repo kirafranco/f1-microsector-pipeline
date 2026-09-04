@@ -164,7 +164,7 @@ def aligned_telemetry(grid_frame: pd.DataFrame | None = None) -> pd.DataFrame:
     `distance_aligned` coincide; `session_time` runs from `SESSION_T0`.
     """
     g = grid() if grid_frame is None else grid_frame
-    out = g[["driver", "lap_number", "speed", "throttle", "n_gear", "brake", "drs", "x", "y"]].copy()
+    out = g[["driver", "lap_number", "speed", "throttle", "rpm", "n_gear", "brake", "drs", "x", "y"]].copy()
     out["session_time"] = SESSION_T0 + g["elapsed_time"].astype(float)
     out["distance_raw"] = g["distance_m"].astype(float)
     out["distance_aligned"] = g["distance_m"].astype(float)
@@ -227,12 +227,67 @@ def official_laps(grid_frame: pd.DataFrame | None = None) -> pd.DataFrame:
     )
 
 
+def raw_channels(grid_frame: pd.DataFrame | None = None) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Raw car telemetry, position data and weather, consistent with the grid.
+
+    The synthetic session is built grid-first, so these are derived back out of
+    it: positions return to FastF1's 1/10 m units, and every lap key matches
+    `official_laps` so the referential rules have something true to check.
+    """
+    g = grid() if grid_frame is None else grid_frame
+    time_s = SESSION_T0 + g["elapsed_time"].astype(float)
+
+    car = pd.DataFrame(
+        {
+            "driver": g["driver"].astype("string"),
+            "lap_number": g["lap_number"].astype("Int16"),
+            "session_time": time_s,
+            "speed": g["speed"].astype("float32"),
+            "throttle": g["throttle"].astype("float32"),
+            "brake": g["brake"].astype("boolean"),
+            "rpm": g["rpm"].astype("float32"),
+            "n_gear": g["n_gear"].astype("Int8"),
+            "drs": g["drs"].astype("Int8"),
+            "source": pd.array(["car"] * len(g), dtype="string"),
+        }
+    )
+    pos = pd.DataFrame(
+        {
+            "driver": g["driver"].astype("string"),
+            "lap_number": g["lap_number"].astype("Int16"),
+            "session_time": time_s,
+            "x": (g["x"].astype(float) * 10).astype("float32"),
+            "y": (g["y"].astype(float) * 10).astype("float32"),
+            "z": pd.array([0.0] * len(g), dtype="float32"),
+            "status": pd.array(["OnTrack"] * len(g), dtype="string"),
+            "source": pd.array(["pos"] * len(g), dtype="string"),
+        }
+    )
+    weather = pd.DataFrame(
+        {
+            "session_time": np.arange(5, dtype=float) * 60.0 + SESSION_T0,
+            "air_temp": np.float32(20.0),
+            "track_temp": np.float32(30.0),
+            "humidity": np.float32(50.0),
+            "pressure": np.float32(1013.0),
+            "wind_speed": np.float32(1.0),
+            "wind_direction": pd.array([180] * 5, dtype="Int16"),
+            "rainfall": pd.array([False] * 5, dtype="boolean"),
+        }
+    )
+    return car, pos, weather
+
+
 def write_full_session(root: Path) -> dict[str, Path]:
     """Grid, snapshot (corners + laps), aligned meta and F009 micro-sectors under ``root``."""
     from src.segment.session import segment_session
 
     grid_root, snapshot_root, aligned_root = write_session(root)
     official_laps().to_parquet(snapshot_root / "laps.parquet", index=False)
+    car, pos, weather = raw_channels()
+    car.to_parquet(snapshot_root / "car_telemetry.parquet", index=False)
+    pos.to_parquet(snapshot_root / "pos_data.parquet", index=False)
+    weather.to_parquet(snapshot_root / "weather.parquet", index=False)
     microsector_root = root / "microsectors" / "synthetic"
     segment_session(grid_root, snapshot_root, aligned_root, out_root=microsector_root)
     return {
