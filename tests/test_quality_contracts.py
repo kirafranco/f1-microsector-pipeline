@@ -14,6 +14,7 @@ import pytest
 
 from src.metrics.session import compute_metrics
 from src.quality.contracts import CONTRACTS, OPTIONAL_TABLES, SESSION_TABLES
+from src.quality.rules import Invariant, NotNull
 from src.quality.engine import validate_tables
 from src.quality.session import load_artefacts
 from src.validate.session import validate_session
@@ -260,3 +261,20 @@ class TestPermittedNulls:
         findings = [f for f in findings_for(corrupt(frames, "laps", blank_lap_time), "laps")
                     if f.rule.startswith("NotNull")]
         assert len(findings) == 1 and findings[0].is_error
+
+
+class TestF018LeavesTheGateAlone:
+    """F018 fixed the producer of `lift_m`, not the contract that caught it.
+
+    The invariant that refused six sessions of the 2024 season is correct and
+    stays a structural rule: absolute, and never softened by a glitch fraction.
+    """
+
+    def test_the_ordering_invariant_is_still_gated(self) -> None:
+        invariants = [r for r in CONTRACTS["events"].rules if isinstance(r, Invariant)]
+        assert [r.name for r in invariants] == ["event_boundaries_are_ordered"]
+        assert all(getattr(r, "max_fraction", 0.0) == 0.0 for r in invariants)
+
+    def test_the_microsector_label_rule_is_still_gated(self) -> None:
+        rules = [r for r in CONTRACTS["microsectors"].rules if isinstance(r, NotNull)]
+        assert any(set(r.check_columns) == {"event_id", "corners"} and r.unless is not None for r in rules)

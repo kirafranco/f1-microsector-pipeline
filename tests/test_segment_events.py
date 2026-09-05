@@ -15,6 +15,7 @@ from src.segment.events import (
     find_troughs,
     median_traces,
 )
+from src.segment.phases import build_corner_phases
 from tests import synthetic_session as syn
 
 
@@ -182,3 +183,130 @@ class TestChainedEvents:
         assert second["lift_m"] == 900.0 and not bool(second["has_braking"])
         assert second["prominence_kmh"] == pytest.approx(46.0)
         assert first["exit_end_m"] <= min(second["lift_m"], second["apex_start_m"])
+
+
+# --- F018: corners taken flat ------------------------------------------------
+
+FLAT_N = 200
+FLAT_GRID_M = 10.0
+FLAT_LAP_M = FLAT_N * FLAT_GRID_M
+
+
+def _well(centre: int, half: int, depth: float) -> np.ndarray:
+    """A cosine speed well: ``depth`` km/h deep at the centre, zero at both edges."""
+    out = np.zeros(FLAT_N)
+    k = np.arange(centre - half, centre + half + 1)
+    x = (k - centre) / half
+    out[k % FLAT_N] = np.maximum(out[k % FLAT_N], depth * 0.5 * (1 + np.cos(np.pi * x)))
+    return out
+
+
+def _flat_traces(speed: np.ndarray, brake: np.ndarray, throttle: np.ndarray) -> pd.DataFrame:
+    return pd.DataFrame(
+        {"distance_m": np.arange(FLAT_N) * FLAT_GRID_M, "speed": speed, "brake": brake,
+         "throttle": throttle, "n_laps": 4},
+        index=pd.Index(np.arange(FLAT_N), name="grid_index"),
+    )
+
+
+def flat_out_traces(lift_before_band: bool = False) -> pd.DataFrame:
+    """A 12 km/h kink at 1,520 m taken flat; its apex band is 1,510-1,540 m.
+
+    The median driver is still at 95 % throttle *at the trough*, which is what
+    used to put the lift inside the band. With ``lift_before_band`` the throttle
+    drops to 85 % for the 40 m in front of the band and is re-applied inside it:
+    a real lift, which a plain clamp to ``apex_start_m`` would hide.
+    """
+    throttle = np.full(FLAT_N, 95.0)
+    if lift_before_band:
+        throttle[147:152] = 85.0
+    return _flat_traces(300.0 - _well(152, 10, 12.0), np.zeros(FLAT_N), throttle)
+
+
+def hairpin_then_kink() -> pd.DataFrame:
+    """A braked hairpin whose label window ends at 1,450 m, then the same kink."""
+    speed = 300.0 - np.maximum(_well(137, 9, 30.0), _well(152, 10, 12.0))
+    brake = np.zeros(FLAT_N)
+    brake[129:137] = 1.0
+    throttle = np.full(FLAT_N, 95.0)
+    throttle[129:140] = 20.0
+    return _flat_traces(speed, brake, throttle)
+
+
+def markers(*distances: float) -> pd.DataFrame:
+    """Circuit-info corner markers at the given aligned distances, T1 upward."""
+    return pd.DataFrame({"number": np.arange(1, len(distances) + 1, dtype="int16"),
+                         "letter": [""] * len(distances), "distance_m": list(distances)})
+
+
+class TestFlatOutCorner:
+    """The lift is sought before the apex band, not before the trough."""
+
+    def test_the_lift_stops_at_the_apex_band(self) -> None:
+        event = detect_events(flat_out_traces(), None).iloc[0]
+        assert (event["apex_start_m"], event["apex_end_m"]) == (1510.0, 1540.0)
+        assert event["lift_m"] == 1510.0
+        assert not bool(event["has_braking"])
+
+    def test_the_ordering_invariant_holds(self) -> None:
+        events = detect_events(flat_out_traces(), None)
+        assert (events["lift_m"] <= events["apex_start_m"]).all()
+        assert (events["apex_start_m"] < events["apex_end_m"]).all()
+        assert (events["apex_end_m"] <= events["exit_end_m"]).all()
+
+    def test_the_throttle_is_still_open_at_the_trough(self) -> None:
+        """Why searching to the trough failed: full throttle past the band."""
+        traces = flat_out_traces()
+        trough = int(detect_events(traces, None).iloc[0]["apex_m"] / FLAT_GRID_M)
+        assert traces["throttle"].iloc[trough] >= EventParams().throttle_lift_pct
+
+    def test_it_yields_no_entry_phase(self) -> None:
+        events = detect_events(flat_out_traces(), None)
+        phases = build_corner_phases(events, FLAT_LAP_M, FLAT_GRID_M)
+        assert set(phases.loc[phases["event_id"].notna(), "phase"]) == {"apex", "exit"}
+
+    def test_a_real_lift_before_the_band_is_kept(self) -> None:
+        event = detect_events(flat_out_traces(lift_before_band=True), None).iloc[0]
+        assert event["lift_m"] == 1470.0
+        assert event["lift_m"] < event["apex_start_m"]
+
+    def test_and_becomes_an_entry_phase(self) -> None:
+        events = detect_events(flat_out_traces(lift_before_band=True), None)
+        phases = build_corner_phases(events, FLAT_LAP_M, FLAT_GRID_M)
+        entry = phases[phases["phase"] == "entry"]
+        assert len(entry) == 1
+        assert (float(entry.iloc[0]["start_m"]), float(entry.iloc[0]["end_m"])) == (1470.0, 1510.0)
+
+
+class TestLabelFallback:
+    """A flat-out event's window collapses onto the band, so reach behind it."""
+
+    def test_the_default_reach_is_pinned(self) -> None:
+        assert EventParams().fallback_margin_m == 60.0
+
+    def test_a_marker_ahead_of_the_band_is_taken(self) -> None:
+        assert detect_events(flat_out_traces(), markers(1460.0))["corners"].tolist() == ["T1"]
+
+    def test_the_far_edge_of_the_reach_is_included(self) -> None:
+        assert detect_events(flat_out_traces(), markers(1450.0))["corners"].tolist() == ["T1"]
+
+    def test_a_marker_beyond_the_reach_is_left_alone(self) -> None:
+        assert detect_events(flat_out_traces(), markers(1440.0))["corners"].isna().all()
+
+    def test_it_does_not_fire_when_the_window_already_labels(self) -> None:
+        events = detect_events(flat_out_traces(), markers(1490.0, 1460.0))
+        assert events["corners"].tolist() == ["T1"]
+
+    def test_a_marker_another_event_claimed_is_not_stolen(self) -> None:
+        events = detect_events(hairpin_then_kink(), markers(1450.0))
+        assert events["corners"].iloc[0] == "T1"
+        assert pd.isna(events["corners"].iloc[1])
+
+    def test_it_takes_the_unclaimed_marker_instead(self) -> None:
+        events = detect_events(hairpin_then_kink(), markers(1450.0, 1470.0))
+        assert events["corners"].tolist() == ["T1", "T2"]
+
+    def test_the_reach_does_not_run_forward(self) -> None:
+        events = detect_events(hairpin_then_kink(), markers(1470.0))
+        assert pd.isna(events["corners"].iloc[0])
+        assert events["corners"].iloc[1] == "T1"
