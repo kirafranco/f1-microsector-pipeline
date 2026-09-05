@@ -18,7 +18,7 @@ from src.metrics.delta import time_curves
 from src.metrics.reference import ReferenceSpec, lap_label, resolve_reference
 from src.segment.validation import Spread
 from src.validate.closure import closure_residuals, reconstruct_laps
-from src.validate.stability import DEFAULT_MIN_LAPS, v_min_stability
+from src.validate.stability import DEFAULT_MIN_LAPS, DEFAULT_PUSH_FRACTION, push_laps, v_min_stability
 from src.validate.timing_line import line_crossings, session_line_positions
 
 logger = logging.getLogger(__name__)
@@ -30,10 +30,24 @@ CLOSURE_P50_MAX_S = 0.08
 CLOSURE_P95_MAX_S = 0.20
 SECTOR_MEDIAN_MAX_S = 0.03
 SECTOR_STD_MAX_S = {"s1": 0.10, "s2": 0.08, "s3": 0.08}
-DISTANCE_STD_MAX_M = 10.0
-V_MIN_STD_MEDIAN_MAX_KMH = 3.0
-V_MIN_STD_P95_MAX_KMH = 6.5
 LINE_POSITION_STD_MAX_M = 8.0
+
+#: Lap-to-lap spread in driven distance, as a percentage of the official lap
+#: length (F019). The absolute 10 m this replaces was Suzuka qualifying's own
+#: figure and did not travel: the spread is a property of the racing line and
+#: scales with the circuit, measuring 0.170 % of lap length at the median in
+#: both qualifying and races across the 2024 season. At 0.25 % the only
+#: sessions that fail are Montreal R, Sao Paulo Q and Spa Q -- each with rain
+#: in its own weather snapshot.
+DISTANCE_STD_MAX_PCT = 0.25
+
+#: V_min repeatability, over push laps only (see `validate.stability`). The
+#: 3.0 / 6.5 these replace were read off one dry qualifying session; the
+#: season's push-lap distribution is a median of 2.46 km/h and a p95 of 5.69 in
+#: qualifying, 2.94 and 6.42 in races. At 4.5 / 10.0 the only sessions that
+#: fail are Silverstone Q, Silverstone R and Spa Q -- again, all three wet.
+V_MIN_STD_MEDIAN_MAX_KMH = 4.5
+V_MIN_STD_P95_MAX_KMH = 10.0
 
 #: A lap whose telemetry window opens later than the session p95 by more than
 #: this is missing real data, not misaligned; it is reported, not gated on.
@@ -44,9 +58,25 @@ GROUND_TRUTH_COLUMNS = (
     "s1_residual_s", "s2_residual_s", "s3_residual_s", "closure_residual_s",
     "driven_m", "driven_pct_of_official", "line_start_m", "line_end_m",
     "window_open_s", "window_close_s", "start_extrap_m", "end_extrap_m",
-    "start_coverage_poor", "end_coverage_poor", "is_reference",
+    "start_coverage_poor", "end_coverage_poor", "distance_excursion", "is_reference",
 )
 
+
+
+def distance_excursions(
+    driven_pct_of_official: pd.Series, band: tuple[float, float] = OFFICIAL_LENGTH_BAND_PCT
+) -> pd.Series:
+    """Laps whose driven distance falls outside the band: off the road and back on.
+
+    Twenty laps of the 2024 season's 26,671 qualify (0.075 %), on accurate,
+    green-flag laps with no pit time -- Piastri at -5.05 % and Albon at +4.64 %
+    are the extremes. They are excluded from the gated statistics and named in
+    the report rather than failing the session, the way a coverage-poor lap
+    already is (global section 3.1). A lap with no distance is not an excursion.
+    """
+    low, high = band
+    value = driven_pct_of_official.astype(float)
+    return ((value < low) | (value > high)).fillna(False)
 
 @dataclass(frozen=True)
 class ValidationReport:
@@ -68,8 +98,11 @@ class ValidationReport:
     sector_std_s: dict[str, float]
     driven_median_m: float
     driven_std_m: float
+    driven_std_pct: float
     driven_pct_min: float
     driven_pct_max: float
+    excursions: list[str]
+    push_laps: int
     v_min_groups: int
     v_min_std_median_kmh: float
     v_min_std_p95_kmh: float
@@ -95,9 +128,17 @@ class ValidationReport:
 
     @property
     def distance_ok(self) -> bool:
+        """Spread of the laps that stayed on the road, plus the band on those laps.
+
+        A lap outside the band drove somewhere else -- off the road and back on
+        -- and is excluded as an excursion before the statistics, the way a
+        coverage-poor lap already is. Global section 3.1: an anomalous record is
+        logged and skipped, the batch does not stop. The excursions are named in
+        `excursions` so they stay visible.
+        """
         low, high = OFFICIAL_LENGTH_BAND_PCT
         return (
-            self.driven_std_m <= DISTANCE_STD_MAX_M
+            self.driven_std_pct <= DISTANCE_STD_MAX_PCT
             and self.driven_pct_min >= low
             and self.driven_pct_max <= high
         )
@@ -151,6 +192,7 @@ def validate_session(
     reference: ReferenceSpec = ReferenceSpec(),
     grid_m: float = GRID_SPACING_M,
     min_laps: int = DEFAULT_MIN_LAPS,
+    push_fraction: float = DEFAULT_PUSH_FRACTION,
 ) -> ValidationResult:
     """Reconstruct official timing from the pipeline output and score every criterion."""
     started = time.perf_counter()
@@ -192,13 +234,21 @@ def validate_session(
     close_limit = float(table["window_close_s"].quantile(0.05)) - COVERAGE_SLACK_S
     table["start_coverage_poor"] = table["window_open_s"] > open_limit
     table["end_coverage_poor"] = table["window_close_s"] < close_limit
-    flagged_mask = table["start_coverage_poor"].fillna(False) | table["end_coverage_poor"].fillna(False)
-    flagged = [f"{r.driver} L{int(r.lap_number)}" for r in table[flagged_mask].itertuples()]
+    table["distance_excursion"] = distance_excursions(table["driven_pct_of_official"])
+    coverage_mask = table["start_coverage_poor"].fillna(False) | table["end_coverage_poor"].fillna(False)
+    flagged_mask = coverage_mask | table["distance_excursion"]
+    flagged = [f"{r.driver} L{int(r.lap_number)}" for r in table[coverage_mask].itertuples()]
+    excursions = [
+        f"{r.driver} L{int(r.lap_number)} {r.driven_pct_of_official:+.2f}%"
+        for r in table[table["distance_excursion"]].itertuples()
+    ]
     if flagged:
         logger.warning("coverage_flagged laps=%s (excluded from gated statistics)", flagged)
+    if excursions:
+        logger.warning("distance_excursion laps=%s (off the road and back; excluded from gated statistics)", excursions)
 
     gated = table[~flagged_mask]
-    stability = v_min_stability(corner_metrics, laps, min_laps)
+    stability = v_min_stability(corner_metrics, laps, min_laps, push_fraction)
     lap_residual = gated["lap_residual_s"].dropna()
     closure = gated["closure_residual_s"].dropna()
     std_values = stability["v_min_std_kmh"].dropna()
@@ -222,8 +272,11 @@ def validate_session(
         sector_std_s={n: float(gated[f"{n}_residual_s"].std()) for n in ("s1", "s2", "s3")},
         driven_median_m=float(gated["driven_m"].median()),
         driven_std_m=float(gated["driven_m"].std()),
+        driven_std_pct=100.0 * float(gated["driven_m"].std()) / official_length_m,
         driven_pct_min=float(gated["driven_pct_of_official"].min()),
         driven_pct_max=float(gated["driven_pct_of_official"].max()),
+        excursions=excursions,
+        push_laps=int(len(push_laps(laps, push_fraction))),
         v_min_groups=int(len(stability)),
         v_min_std_median_kmh=float(std_values.median()) if len(std_values) else float("nan"),
         v_min_std_p95_kmh=float(std_values.quantile(0.95)) if len(std_values) else float("nan"),
@@ -266,10 +319,11 @@ def validate_session(
     )
 
     logger.info(
-        "validation_complete laps=%d gated=%d flagged=%d lap_median_s=%+.3f lap_std_s=%.3f "
+        "validation_complete laps=%d gated=%d flagged=%d excursions=%d push_laps=%d lap_median_s=%+.3f lap_std_s=%.3f "
         "closure_p50_s=%.3f closure_p95_s=%.3f s1=%+.3f s2=%+.3f s3=%+.3f v_min_std_median=%.2f "
         "acceptance_ok=%s elapsed_s=%.2f",
-        report.laps, report.laps_gated, len(flagged), report.lap_residual_median_s, report.lap_residual_std_s,
+        report.laps, report.laps_gated, len(flagged), len(report.excursions), report.push_laps,
+        report.lap_residual_median_s, report.lap_residual_std_s,
         report.closure.p50, report.closure.p95, report.sector_median_s["s1"], report.sector_median_s["s2"],
         report.sector_median_s["s3"], report.v_min_std_median_kmh, report.ok, elapsed,
     )
