@@ -11,7 +11,7 @@ import pytest
 from src.config import DATA_ROOT, INTERIM_ROOT, PROCESSED_ROOT
 from src.metrics.session import compute_metrics
 from src.quality import session as mod
-from src.quality.contracts import CONTRACTS
+from src.quality.contracts import CONTRACTS, SESSION_TABLES
 from src.quality.engine import QualityGateError, require
 from src.quality.session import ARTEFACTS, check_session, load_artefacts, observed_ranges
 from src.validate.session import validate_session
@@ -73,13 +73,13 @@ class TestSyntheticSession:
 
     def test_every_artefact_is_loaded(self, synthetic) -> None:
         frames = load_artefacts(**synthetic)
-        assert set(frames) == set(ARTEFACTS) == set(CONTRACTS)
+        assert set(frames) == set(ARTEFACTS) == set(SESSION_TABLES)
 
     def test_report_json_carries_findings_and_ranges(self, synthetic, tmp_path: Path) -> None:
         result = check_session(**synthetic, out_root=tmp_path / "out")
         payload = json.loads((result.root / "quality_report.json").read_text(encoding="utf-8"))
         assert payload["ok"] is True
-        assert len(payload["tables"]) == len(CONTRACTS)
+        assert len(payload["tables"]) == len(SESSION_TABLES)
         assert payload["observed_ranges"]["grid"]["speed"][1] > 0
         assert "envelopes" in payload["limitation"]
         assert payload["contract_version"] == result.report.contract_version
