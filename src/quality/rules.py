@@ -199,11 +199,21 @@ class ForeignKey(Rule):
 
 @dataclass(frozen=True)
 class Range(Rule):
-    """Physical bounds, inclusive. Nulls are NotNull's business, not this rule's."""
+    """Physical bounds, inclusive. Nulls are NotNull's business, not this rule's.
+
+    ``max_fraction`` tolerates a documented sliver of corrupt samples without
+    losing the check. The source is a live timing feed and it does produce
+    nonsense occasionally -- 49 samples of one 2024 race report a gear of 72 --
+    and global CLAUDE.md 3.1 is explicit that a corrupt record is logged and
+    skipped rather than stopping the batch. A rule that fails the whole session
+    over 0.02 % of its rows enforces the opposite. Set the fraction low enough
+    that a channel which has genuinely broken still fails.
+    """
 
     column: str = ""
     low: float = -np.inf
     high: float = np.inf
+    max_fraction: float = 0.0
 
     @property
     def label(self) -> str:
@@ -216,8 +226,14 @@ class Range(Rule):
     def violations(self, frame: pd.DataFrame, parents: Mapping[str, pd.DataFrame]) -> pd.Series:
         _require_columns(frame, [self.column])
         values = pd.to_numeric(frame[self.column], errors="coerce")
-        outside = (values < self.low) | (values > self.high)
-        return outside.fillna(False).astype(bool)
+        outside = ((values < self.low) | (values > self.high)).fillna(False).astype(bool)
+        if self.max_fraction > 0 and len(frame):
+            if float(outside.sum()) / len(frame) <= self.max_fraction:
+                return pd.Series(False, index=frame.index)
+        return outside
+
+    def detail(self, frame: pd.DataFrame) -> str:
+        return f"max_fraction={self.max_fraction}" if self.max_fraction else ""
 
 
 @dataclass(frozen=True)

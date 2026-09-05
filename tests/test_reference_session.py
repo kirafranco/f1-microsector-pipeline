@@ -16,7 +16,7 @@ from src.reference.jolpica import JolpicaClient, JolpicaEmptyError
 from src.reference.session import TABLE_FILES, ingest_reference, load_reference
 
 FIXTURES = Path(__file__).parent / "fixtures" / "jolpica"
-SUZUKA_LAPS = DATA_ROOT / "raw" / "fastf1" / "2026-09-01" / "2024_Japan_Q" / "laps.parquet"
+SUZUKA_LAPS = DATA_ROOT / "raw" / "fastf1" / "2026-09-05" / "2024_Japanese-Grand-Prix_Q" / "laps.parquet"
 
 
 def payload(name: str) -> dict:

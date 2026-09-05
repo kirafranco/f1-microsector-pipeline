@@ -47,7 +47,9 @@ GRID_SCHEMA: dict[str, str] = {
     "rpm": "float32",
     "x": "float32",
     "y": "float32",
-    "n_gear": "Int8",
+    # Int16 for the same reason as the ingest schema: one sample of the 2024
+    # Japanese Grand Prix reads gear 128, one past int8 (F015).
+    "n_gear": "Int16",
     "drs": "Int8",
     "brake": "boolean",
     "source_gap_m": "float32",

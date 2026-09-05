@@ -109,8 +109,18 @@ class TestBrakeChannel:
 
     def test_gear_and_drs_are_small_ints(self) -> None:
         out = coerce(self._car_frame([True, False]), schemas.CAR_TELEMETRY)
-        assert out["n_gear"].dtype == "Int8"
-        assert out["drs"].dtype == "Int8"
+        assert out["drs"].dtype == "Int8", "a status byte, 0-15"
+        assert out["n_gear"].dtype == "Int16"
+
+    def test_a_garbage_gear_is_carried_rather_than_crashing_the_ingest(self) -> None:
+        """One sample of the 2024 Japanese Grand Prix reads gear 128, exactly
+        one past int8, and the safe cast refused it -- taking the whole session
+        down at ingest. The type carries it now and F011 tolerates a sliver of
+        impossible gears, which is the layer that should be judging it."""
+        frame = self._car_frame([True, False])
+        frame.loc[0, "nGear"] = 128
+        out = coerce(frame, schemas.CAR_TELEMETRY)
+        assert int(out["n_gear"].iloc[0]) == 128
 
 
 class TestAssertUnique:

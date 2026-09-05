@@ -98,31 +98,83 @@ class TestCorruptionMatrix:
                     if f.rule.startswith("ForeignKey")]
         assert len(findings) == 1 and findings[0].count == 1
 
-    def test_speed_beyond_the_envelope(self, frames) -> None:
+    def test_one_implausible_speed_is_tolerated(self, frames) -> None:
+        """Per-sample channel bounds carry a glitch tolerance: the feed does
+        emit occasional nonsense, and a race must not fail over a handful of
+        samples (global CLAUDE.md 3.1)."""
         def implausible(f):
             f.loc[3, "speed"] = 450.0
             return f
 
         findings = [f for f in findings_for(corrupt(frames, "grid", implausible), "grid")
                     if f.rule.startswith("Range") and f.columns == ("speed",)]
-        assert len(findings) == 1 and findings[0].count == 1
+        assert findings == []
 
-    def test_undocumented_drs_code(self, frames) -> None:
-        def odd_code(f):
+    def test_a_broken_speed_channel_still_fails(self, frames) -> None:
+        def implausible(f):
+            f["speed"] = 450.0
+            return f
+
+        findings = [f for f in findings_for(corrupt(frames, "grid", implausible), "grid")
+                    if f.rule.startswith("Range") and f.columns == ("speed",)]
+        assert len(findings) == 1 and findings[0].is_error
+
+    def test_the_tolerance_does_not_reach_structural_rules(self) -> None:
+        """Uniqueness, keys, invariants and completeness stay absolute: those
+        failing means the pipeline is wrong, not that the feed hiccupped."""
+        from src.quality.contracts import CONTRACTS
+        from src.quality.rules import ForeignKey, Invariant, Range, Unique
+
+        for name, contract in CONTRACTS.items():
+            for rule in contract.rules:
+                if isinstance(rule, (Unique, ForeignKey, Invariant)):
+                    assert getattr(rule, "max_fraction", 0.0) == 0.0, f"{name}: {rule.label}"
+
+    def test_a_drs_value_that_is_not_a_status_byte(self, frames) -> None:
+        """The check is that the channel is DRS at all. 7 is an unused code but
+        a plausible byte; 100 is not the channel this contract describes."""
+        def not_a_byte(f):
+            f.loc[2, "drs"] = 100
+            return f
+
+        findings = [f for f in findings_for(corrupt(frames, "grid", not_a_byte), "grid")
+                    if f.rule == "AllowedValues"]
+        assert len(findings) == 1 and "100" in findings[0].detail
+
+    def test_an_unused_but_plausible_drs_code_passes(self, frames) -> None:
+        """Enumerating the codes one session happened to show was the bug: 2,
+        3, 11, 13 and 15 each blocked a race until they were added (F015)."""
+        def unused_code(f):
             f.loc[2, "drs"] = 7
             return f
 
-        findings = [f for f in findings_for(corrupt(frames, "grid", odd_code), "grid") if f.rule == "AllowedValues"]
-        assert len(findings) == 1 and "7" in findings[0].detail
+        findings = [f for f in findings_for(corrupt(frames, "grid", unused_code), "grid")
+                    if f.rule == "AllowedValues"]
+        assert findings == []
 
-    def test_impossible_gear(self, frames) -> None:
+    def test_one_impossible_gear_is_tolerated(self, frames) -> None:
+        """The timing feed does emit the occasional nonsense sample -- 49 of
+        ~300k in the 2024 Miami Grand Prix report a gear of 72 -- and global
+        CLAUDE.md 3.1 says a corrupt record is skipped, not that the batch
+        stops. Failing a whole race over 0.02 % of its rows does the opposite."""
         def ninth_gear(f):
             f.loc[1, "n_gear"] = 9
             return f
 
         findings = [f for f in findings_for(corrupt(frames, "grid", ninth_gear), "grid")
                     if f.rule.startswith("Range") and f.columns == ("n_gear",)]
+        assert findings == []
+
+    def test_a_broken_gear_channel_still_fails(self, frames) -> None:
+        """The tolerance is a sliver, not an amnesty."""
+        def every_gear(f):
+            f["n_gear"] = 9
+            return f
+
+        findings = [f for f in findings_for(corrupt(frames, "grid", every_gear), "grid")
+                    if f.rule.startswith("Range") and f.columns == ("n_gear",)]
         assert len(findings) == 1
+        assert findings[0].is_error
 
     def test_distance_no_longer_matches_the_index(self, frames) -> None:
         def shift(f):

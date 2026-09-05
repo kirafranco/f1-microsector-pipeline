@@ -20,7 +20,7 @@ import pytest
 from src.config import PROJECT_ROOT
 
 DOC = PROJECT_ROOT / "docs" / "findings" / "2024-suzuka-q3-ver-per.md"
-SUMMARY = PROJECT_ROOT / "data" / "processed" / "2024_Japan_Q_projection" / "findings" / "summary.json"
+SUMMARY = PROJECT_ROOT / "data" / "processed" / "2024_Japanese-Grand-Prix_Q_projection" / "findings" / "summary.json"
 
 IMAGE = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
 #: Numbers written as a signed or unsigned quantity of seconds, e.g. "+0.122 s".
@@ -67,7 +67,7 @@ class TestTheDocument:
     def test_it_names_its_source_and_snapshot(self, document: str) -> None:
         """A result without a dated source cannot be reproduced or dated."""
         assert "FastF1" in document
-        assert "2026-09-01" in document
+        assert "2026-09-05" in document
 
     def test_it_names_the_file_its_numbers_come_from(self, document: str) -> None:
         assert "summary.json" in document

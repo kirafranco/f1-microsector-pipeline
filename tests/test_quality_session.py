@@ -18,11 +18,11 @@ from src.validate.session import validate_session
 from tests import synthetic_session as syn
 
 SUZUKA = {
-    "snapshot_root": DATA_ROOT / "raw" / "fastf1" / "2026-09-01" / "2024_Japan_Q",
-    "aligned_root": INTERIM_ROOT / "aligned" / "2024_Japan_Q_projection",
-    "grid_root": INTERIM_ROOT / "grid" / "2024_Japan_Q_projection",
-    "microsector_root": INTERIM_ROOT / "microsectors" / "2024_Japan_Q_projection",
-    "processed_root": PROCESSED_ROOT / "2024_Japan_Q_projection",
+    "snapshot_root": DATA_ROOT / "raw" / "fastf1" / "2026-09-05" / "2024_Japanese-Grand-Prix_Q",
+    "aligned_root": INTERIM_ROOT / "aligned" / "2024_Japanese-Grand-Prix_Q_projection",
+    "grid_root": INTERIM_ROOT / "grid" / "2024_Japanese-Grand-Prix_Q_projection",
+    "microsector_root": INTERIM_ROOT / "microsectors" / "2024_Japanese-Grand-Prix_Q_projection",
+    "processed_root": PROCESSED_ROOT / "2024_Japanese-Grand-Prix_Q_projection",
 }
 SUZUKA_PRESENT = all(
     (SUZUKA[key] / name).exists()

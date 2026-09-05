@@ -28,11 +28,11 @@ pytestmark = pytest.mark.docker
 
 SCRATCH_DB = "f1_microsector_f005_test"
 SUZUKA = (
-    DATA_ROOT / "raw/fastf1/2026-09-01/2024_Japan_Q",
-    INTERIM_ROOT / "aligned/2024_Japan_Q_projection",
-    INTERIM_ROOT / "grid/2024_Japan_Q_projection",
-    INTERIM_ROOT / "microsectors/2024_Japan_Q_projection",
-    PROCESSED_ROOT / "2024_Japan_Q_projection",
+    DATA_ROOT / "raw/fastf1/2026-09-05/2024_Japanese-Grand-Prix_Q",
+    INTERIM_ROOT / "aligned/2024_Japanese-Grand-Prix_Q_projection",
+    INTERIM_ROOT / "grid/2024_Japanese-Grand-Prix_Q_projection",
+    INTERIM_ROOT / "microsectors/2024_Japanese-Grand-Prix_Q_projection",
+    PROCESSED_ROOT / "2024_Japanese-Grand-Prix_Q_projection",
 )
 SUZUKA_PRESENT = all((root / name).exists() for root, name in zip(SUZUKA, (
     "laps.parquet", "telemetry_aligned.parquet", "grid.parquet", "microsectors.parquet", "corner_metrics.parquet")))
@@ -217,8 +217,8 @@ class TestSuzukaAcceptance:
 
     def test_criterion_2_every_row_arrives(self, loaded, settings: Settings) -> None:
         result, _ = loaded
-        assert result.rows == {"dim_lap": 74, "fact_telemetry_grid": 42418,
-                               "fact_microsector": 6882, "fact_corner_metric": 592}
+        assert result.rows == {"dim_lap": 74, "fact_telemetry_grid": 42198,
+                               "fact_microsector": 6808, "fact_corner_metric": 592}
 
     def test_criterion_3_the_load_is_quick(self, loaded) -> None:
         _, elapsed = loaded
@@ -308,6 +308,6 @@ class TestSuzukaAcceptance:
             cur.execute("SELECT quality_ok, quality_warnings, rows_grid, contract_version FROM load_audit "
                         "WHERE load_id = %s", (result.load_id,))
             ok, warnings, rows_grid, contract = cur.fetchone()
-            assert ok is True and rows_grid == 42418
+            assert ok is True and rows_grid == 42198
             assert warnings == 1, "the seven brakeless corners, as F004 measured"
             assert contract == result.quality.contract_version

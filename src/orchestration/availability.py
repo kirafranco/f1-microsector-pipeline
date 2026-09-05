@@ -91,12 +91,21 @@ PERMANENT_NAMES = frozenset({
     "SnapshotCorruptError",
 })
 
+#: FastF1 rate-limits its backend, and a season backfill is the first time this
+#: project asks for more than one session in an hour (F015). The exception
+#: carries no HTTP status and no timeout in its name, so `is_transient` would
+#: call it permanent and the pipeline would abandon a session that only needed
+#: to wait -- which is exactly what the sensor's backoff is for.
+RATE_LIMITED_NAMES = frozenset({"RateLimitExceededError"})
+
 
 def classify(exc: BaseException) -> Availability:
     """Turn an exception raised while probing into a verdict."""
     names = {type(base).__name__ for base in (exc,)} | {
         cls.__name__ for cls in type(exc).__mro__
     }
+    if names & RATE_LIMITED_NAMES:
+        return Availability.TRANSIENT
     if names & PERMANENT_NAMES:
         return Availability.PERMANENT
     if names & NOT_READY_NAMES:
