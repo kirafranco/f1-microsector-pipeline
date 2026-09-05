@@ -1,10 +1,14 @@
 # Files that run inside Linux containers must keep LF endings regardless of
-# the checkout machine: a CRLF in a shell script breaks bash in the container
-# ("$'': command not found"). Windows checkouts here convert to CRLF by
-# default, so this is enforced rather than assumed.
+# the checkout machine: a CRLF in a shell script breaks bash in the container,
+# which reports the stray carriage return as a command it cannot find. Windows
+# checkouts here convert to CRLF by default, so this is enforced rather than
+# assumed.
 *.sh    text eol=lf
 *.yml   text eol=lf
 *.yaml  text eol=lf
 *.sql   text eol=lf
 Dockerfile text eol=lf
 .env.example text eol=lf
+# Grafana reads its provisioned dashboards from inside its container, and the
+# API fixtures are compared against recorded responses, so JSON stays LF too.
+*.json  text eol=lf
