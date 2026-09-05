@@ -19,3 +19,7 @@ requests==2.34.2
 # Warehouse loader (F005). The binary wheel bundles libpq, so no system
 # PostgreSQL client is needed on the host.
 psycopg[binary]==3.3.5
+
+# Findings figures (F016). Already present as a FastF1 dependency, but this
+# project imports it directly, and an implicit dependency is not a pin.
+matplotlib==3.11.1
