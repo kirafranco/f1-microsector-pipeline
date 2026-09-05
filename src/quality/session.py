@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 
 from src.config import PROCESSED_ROOT
-from src.quality.contracts import CONTRACTS, OPTIONAL_TABLES, REPORTED_RANGES
+from src.quality.contracts import CONTRACTS, OPTIONAL_TABLES, REPORTED_RANGES, SESSION_TABLES
 from src.quality.engine import QualityReport, TableContract, findings_frame, validate_tables
 
 logger = logging.getLogger(__name__)
@@ -100,10 +100,13 @@ def check_session(
     microsector_root: Path,
     processed_root: Path,
     out_root: Path | None = None,
-    contracts: Mapping[str, TableContract] = CONTRACTS,
+    contracts: Mapping[str, TableContract] | None = None,
 ) -> QualityResult:
     """Validate a whole session and write the report next to its processed data."""
     started = time.perf_counter()
+    # Reference tables (F012) are per season, not per session, so a session
+    # check would report every one of them as missing.
+    contracts = contracts if contracts is not None else {n: CONTRACTS[n] for n in sorted(SESSION_TABLES)}
     frames = load_artefacts(snapshot_root, aligned_root, grid_root, microsector_root, processed_root)
     if not frames:
         raise FileNotFoundError(f"no artefacts found under {processed_root} and its sibling roots")

@@ -11,3 +11,7 @@ fastf1==3.8.3
 pandas==2.3.3
 numpy==2.4.6
 pyarrow==25.0.1
+
+# Jolpica-F1 reference data (F012). Already present as a FastF1 dependency,
+# but this project calls it directly, and an implicit dependency is not a pin.
+requests==2.34.2

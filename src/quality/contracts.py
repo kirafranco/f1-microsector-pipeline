@@ -11,9 +11,12 @@ from __future__ import annotations
 from src.quality import predicates as p
 from src.quality.engine import TableContract
 from src.quality.rules import ERROR, WARNING, AllowedValues, ForeignKey, Invariant, NotNull, Range, Unique
+from src.reference.tables import SESSION_CODES
 
 #: FastF1's DRS code set. Anything else is undocumented and worth a look.
 DRS_CODES = (0, 1, 8, 9, 10, 12, 14)
+#: F012 session codes (FP1..R) come from the reference tables module, so the
+#: allowed-value rule and the builder can never drift apart.
 #: Corner phases F009 emits, plus the fixed-bin label.
 PHASES = ("braking", "entry", "apex", "exit", "straight", "bin")
 GRAINS = ("corner_phase", "fixed_100m")
@@ -314,6 +317,64 @@ CONTRACTS: dict[str, TableContract] = {
         parents=("events",),
     ),
 }
+
+# --- F012 reference data (per season, not per session) ------------------------
+REFERENCE_CONTRACTS: dict[str, TableContract] = {
+    "dim_event": _contract(
+        "dim_event", ("season", "round"),
+        [
+            NotNull(check_columns=("season", "round", "event_name", "circuit_id", "circuit_name",
+                                   "country", "lat", "lon", "race_date")),
+            Unique(key=("season", "round")),
+            Range(column="round", low=1, high=30),
+            Range(column="lat", low=-90.0, high=90.0),
+            Range(column="lon", low=-180.0, high=180.0),
+        ],
+    ),
+    "dim_session_schedule": _contract(
+        "dim_session_schedule", ("season", "round", "session"),
+        [
+            NotNull(check_columns=("season", "round", "session", "session_start_utc", "has_time")),
+            Unique(key=("season", "round", "session")),
+            ForeignKey(key=("season", "round"), parent="dim_event"),
+            AllowedValues(column="session", values=SESSION_CODES),
+            Range(column="round", low=1, high=30),
+        ],
+        parents=("dim_event",),
+    ),
+    "dim_driver": _contract(
+        "dim_driver", ("season", "code"),
+        [
+            NotNull(check_columns=("season", "code", "driver_id", "given_name", "family_name", "full_name")),
+            Unique(key=("season", "code")),
+            Range(column="permanent_number", low=0, high=99),
+        ],
+    ),
+    "dim_constructor": _contract(
+        "dim_constructor", ("season", "constructor_id"),
+        [
+            NotNull(check_columns=("season", "constructor_id", "name")),
+            Unique(key=("season", "constructor_id")),
+        ],
+    ),
+    "driver_entry": _contract(
+        "driver_entry", ("season", "round", "code"),
+        [
+            NotNull(check_columns=("season", "round", "code", "driver_id", "constructor_id", "car_number")),
+            Unique(key=("season", "round", "code")),
+            ForeignKey(key=("season", "round"), parent="dim_event"),
+            ForeignKey(key=("season", "code"), parent="dim_driver"),
+            ForeignKey(key=("season", "constructor_id"), parent="dim_constructor"),
+            Range(column="car_number", low=0, high=99),
+        ],
+        parents=("dim_event", "dim_driver", "dim_constructor"),
+    ),
+}
+
+CONTRACTS.update(REFERENCE_CONTRACTS)
+
+#: Reference data is ingested per season, so a per-session check will not see it.
+SESSION_TABLES = frozenset(CONTRACTS) - frozenset(REFERENCE_CONTRACTS)
 
 #: Artefacts a session may legitimately not have produced.
 OPTIONAL_TABLES = frozenset({"weather", "corners_aligned", "v_min_stability", "ground_truth"})

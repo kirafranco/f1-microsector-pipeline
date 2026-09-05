@@ -13,7 +13,7 @@ import pandas as pd
 import pytest
 
 from src.metrics.session import compute_metrics
-from src.quality.contracts import CONTRACTS, OPTIONAL_TABLES
+from src.quality.contracts import CONTRACTS, OPTIONAL_TABLES, SESSION_TABLES
 from src.quality.engine import validate_tables
 from src.quality.session import load_artefacts
 from src.validate.session import validate_session
@@ -40,20 +40,25 @@ def corrupt(frames: dict[str, pd.DataFrame], table: str, mutate) -> dict[str, pd
     return out
 
 
+#: Reference tables (F012) are ingested per season, so a session's frames never
+#: contain them; validating a session against them would report 5 missing tables.
+SESSION_CONTRACTS = {name: CONTRACTS[name] for name in sorted(SESSION_TABLES)}
+
+
 def findings_for(frames: dict[str, pd.DataFrame], table: str) -> list:
-    return [f for f in validate_tables(frames, CONTRACTS).findings if f.table == table]
+    return [f for f in validate_tables(frames, SESSION_CONTRACTS).findings if f.table == table]
 
 
 class TestCleanSession:
     def test_every_artefact_is_present_and_contracted(self, frames) -> None:
-        assert set(frames) == set(CONTRACTS), set(CONTRACTS) ^ set(frames)
+        assert set(frames) == set(SESSION_TABLES), set(SESSION_TABLES) ^ set(frames)
 
     def test_the_designed_session_passes_with_no_error(self, frames) -> None:
-        report = validate_tables(frames, CONTRACTS)
+        report = validate_tables(frames, SESSION_CONTRACTS)
         assert report.ok, [str(f) for f in report.errors]
 
     def test_contracts_only_reference_columns_that_exist(self, frames) -> None:
-        report = validate_tables(frames, CONTRACTS)
+        report = validate_tables(frames, SESSION_CONTRACTS)
         inapplicable = [f for f in report.findings if "not applicable" in f.rule]
         assert not inapplicable, [f"{f.table}: {f.detail}" for f in inapplicable]
 
@@ -160,7 +165,7 @@ class TestCorruptionMatrix:
     def test_a_table_nobody_contracted(self, frames) -> None:
         damaged = dict(frames)
         damaged["surprise"] = pd.DataFrame({"x": [1, 2, 3]})
-        findings = [f for f in validate_tables(damaged, CONTRACTS).findings if f.table == "surprise"]
+        findings = [f for f in validate_tables(damaged, SESSION_CONTRACTS).findings if f.table == "surprise"]
         assert len(findings) == 1 and findings[0].rule == "NoContract" and findings[0].is_error
 
 

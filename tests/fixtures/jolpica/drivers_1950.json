@@ -1,0 +1,63 @@
+{
+ "MRData": {
+  "xmlns": "",
+  "series": "f1",
+  "url": "https://api.jolpi.ca/ergast/f1/1950/drivers.json",
+  "limit": "100",
+  "offset": "0",
+  "total": "6",
+  "DriverTable": {
+   "season": "1950",
+   "Drivers": [
+    {
+     "driverId": "ader",
+     "url": "http://en.wikipedia.org/wiki/Walt_Ader",
+     "givenName": "Walt",
+     "familyName": "Ader",
+     "dateOfBirth": "1913-12-15",
+     "nationality": "American"
+    },
+    {
+     "driverId": "agabashian",
+     "url": "http://en.wikipedia.org/wiki/Fred_Agabashian",
+     "givenName": "Fred",
+     "familyName": "Agabashian",
+     "dateOfBirth": "1913-08-21",
+     "nationality": "American"
+    },
+    {
+     "driverId": "ascari",
+     "url": "http://en.wikipedia.org/wiki/Alberto_Ascari",
+     "givenName": "Alberto",
+     "familyName": "Ascari",
+     "dateOfBirth": "1918-07-13",
+     "nationality": "Italian"
+    },
+    {
+     "driverId": "banks",
+     "url": "http://en.wikipedia.org/wiki/Henry_Banks",
+     "givenName": "Henry",
+     "familyName": "Banks",
+     "dateOfBirth": "1913-06-14",
+     "nationality": "American"
+    },
+    {
+     "driverId": "bettenhausen",
+     "url": "http://en.wikipedia.org/wiki/Tony_Bettenhausen",
+     "givenName": "Tony",
+     "familyName": "Bettenhausen",
+     "dateOfBirth": "1916-09-12",
+     "nationality": "American"
+    },
+    {
+     "driverId": "biondetti",
+     "url": "http://en.wikipedia.org/wiki/Clemente_Biondetti",
+     "givenName": "Clemente",
+     "familyName": "Biondetti",
+     "dateOfBirth": "1898-08-18",
+     "nationality": "Italian"
+    }
+   ]
+  }
+ }
+}
