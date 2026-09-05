@@ -1,0 +1,2554 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "description": "Two laps on the shared 10 m distance grid: where the time went, and how certain each figure is. Provisioned from servicios/grafana/provisioning/dashboards/json/pit-wall/pit-wall.json — edits made here are overwritten from disk.",
+  "editable": false,
+  "graphTooltip": 0,
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "The two laps",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Lap A — $driver_a",
+      "description": "Official lap time from the timing feed (F002), not a figure this pipeline computed.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "f1-postgres"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "decimals": 3,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "f1-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT lap_time_s FROM dim_lap WHERE lap_id = $lap_a",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [],
+            "limit": 50
+          }
+        }
+      ],
+      "pluginVersion": "12.4.3"
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Lap B — $driver_b",
+      "description": "Official lap time from the timing feed (F002), not a figure this pipeline computed.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "f1-postgres"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "decimals": 3,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "f1-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT lap_time_s FROM dim_lap WHERE lap_id = $lap_b",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [],
+            "limit": 50
+          }
+        }
+      ],
+      "pluginVersion": "12.4.3"
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Official gap (B − A)",
+      "description": "The difference of the two official lap times. The panel to the right is what this pipeline reconstructs from telemetry; the two should agree to within the F010 residual.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "f1-postgres"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds",
+            "fixedColor": "text"
+          },
+          "decimals": 3,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "f1-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT b.lap_time_s - a.lap_time_s AS gap_s\nFROM dim_lap a\nJOIN dim_lap b ON b.lap_id = $lap_b\nWHERE a.lap_id = $lap_a",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [],
+            "limit": 50
+          }
+        }
+      ],
+      "pluginVersion": "12.4.3"
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Reconstructed gap at the last shared grid point",
+      "description": "Δt where the two laps stop sharing grid points. It is measured on the 10 m grid from each lap's own start, so it will not match the official gap exactly — F010 measured that residual at p50 0.054 s, p95 0.147 s.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "f1-postgres"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds",
+            "fixedColor": "text"
+          },
+          "decimals": 3,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "f1-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH s AS (\n    SELECT season, round, session_code FROM dim_session WHERE session_id = $session\n)\nSELECT b.t_s - a.t_s AS delta_end_s\nFROM fact_telemetry_grid a\nJOIN s ON a.season = s.season AND a.round = s.round AND a.session_code = s.session_code\nJOIN fact_telemetry_grid b\n  ON b.season = s.season AND b.round = s.round AND b.session_code = s.session_code\n AND b.lap_id = $lap_b\n AND b.grid_index = a.grid_index\nWHERE a.lap_id = $lap_a\nORDER BY a.grid_index DESC\nLIMIT 1",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [],
+            "limit": 50
+          }
+        }
+      ],
+      "pluginVersion": "12.4.3"
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "Tyres and reconstruction residual",
+      "description": "'thin start' and 'thin end' flag a lap whose telemetry was sparse at the timing line (F010): read its Δt ends with that in mind.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "f1-postgres"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true,
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "lap time s"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "grid − official s"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "f1-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT CASE WHEN lap_id = $lap_a THEN 'A' ELSE 'B' END AS side,\n       code           AS driver,\n       lap_number     AS lap,\n       compound,\n       stint,\n       tyre_life      AS \"tyre life\",\n       lap_time_s     AS \"lap time s\",\n       lap_residual_s AS \"grid − official s\",\n       start_coverage_poor AS \"thin start\",\n       end_coverage_poor   AS \"thin end\"\nFROM dim_lap\nWHERE lap_id IN ($lap_a, $lap_b)\nORDER BY side",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [],
+            "limit": 50
+          }
+        }
+      ],
+      "pluginVersion": "12.4.3"
+    },
+    {
+      "id": 7,
+      "type": "row",
+      "title": "Pit wall — hover to read every channel at one distance",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "panels": []
+    },
+    {
+      "id": 8,
+      "type": "trend",
+      "title": "$driver_a (A) vs $driver_b (B) — Δt, speed, throttle and brake against distance",
+      "description": "One panel, because Grafana's Trend visualisation has no shared crosshair: hovering here reads every channel at the same distance, which stacked panels cannot do. Δt is on the left axis, speed on the right; throttle and brake share a hidden axis. Δt rising means B is losing time.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "f1-postgres"
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 6
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": ""
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Δt (B−A)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "left"
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "Δt (s)"
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 3
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 10
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "speed A"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "velocitykmh"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "speed (km/h)"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "speed B"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "velocitykmh"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "throttle A"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "hidden"
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "semi-dark-blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "throttle B"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "hidden"
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "semi-dark-orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "brake A"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "hidden"
+              },
+              {
+                "id": "custom.lineInterpolation",
+                "value": "stepAfter"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 20
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "dark-blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "brake B"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "hidden"
+              },
+              {
+                "id": "custom.lineInterpolation",
+                "value": "stepAfter"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 20
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "dark-orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "min",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "none"
+        },
+        "xField": "distance_m"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "f1-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH s AS (\n    SELECT season, round, session_code FROM dim_session WHERE session_id = $session\n)\nSELECT a.distance_m         AS distance_m,\n       b.t_s - a.t_s        AS \"Δt (B−A)\",\n       a.speed              AS \"speed A\",\n       b.speed              AS \"speed B\",\n       a.throttle           AS \"throttle A\",\n       b.throttle           AS \"throttle B\",\n       a.brake::int         AS \"brake A\",\n       b.brake::int         AS \"brake B\"\nFROM fact_telemetry_grid a\nJOIN s ON a.season = s.season AND a.round = s.round AND a.session_code = s.session_code\nJOIN fact_telemetry_grid b\n  ON b.season = s.season AND b.round = s.round AND b.session_code = s.session_code\n AND b.lap_id = $lap_b\n AND b.grid_index = a.grid_index\nWHERE a.lap_id = $lap_a\nORDER BY a.grid_index",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [],
+            "limit": 50
+          }
+        }
+      ],
+      "transparent": false,
+      "pluginVersion": "12.4.3"
+    },
+    {
+      "id": 9,
+      "type": "row",
+      "title": "Channels aligned by distance",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      },
+      "panels": []
+    },
+    {
+      "id": 10,
+      "type": "trend",
+      "title": "Speed",
+      "description": "A blue, B orange. Read on the 10 m grid, so a corner minimum here is the lowest speed over a 10 m window rather than an instantaneous one — the corner table applies the same caveat to V_min (D6).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "f1-postgres"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 19
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "velocitykmh"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "A"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "min",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "none"
+        },
+        "xField": "distance_m"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "f1-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH s AS (\n    SELECT season, round, session_code FROM dim_session WHERE session_id = $session\n)\nSELECT a.distance_m AS distance_m,\n       a.speed AS \"A\",\n       b.speed AS \"B\"\nFROM fact_telemetry_grid a\nJOIN s ON a.season = s.season AND a.round = s.round AND a.session_code = s.session_code\nJOIN fact_telemetry_grid b\n  ON b.season = s.season AND b.round = s.round AND b.session_code = s.session_code\n AND b.lap_id = $lap_b\n AND b.grid_index = a.grid_index\nWHERE a.lap_id = $lap_a\nORDER BY a.grid_index",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [],
+            "limit": 50
+          }
+        }
+      ],
+      "transparent": false,
+      "pluginVersion": "12.4.3"
+    },
+    {
+      "id": 11,
+      "type": "trend",
+      "title": "Throttle",
+      "description": "A continuous channel, so it is interpolated between samples — unlike brake, gear and DRS below.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "f1-postgres"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 19
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "A"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "none"
+        },
+        "xField": "distance_m"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "f1-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH s AS (\n    SELECT season, round, session_code FROM dim_session WHERE session_id = $session\n)\nSELECT a.distance_m AS distance_m,\n       a.throttle AS \"A\",\n       b.throttle AS \"B\"\nFROM fact_telemetry_grid a\nJOIN s ON a.season = s.season AND a.round = s.round AND a.session_code = s.session_code\nJOIN fact_telemetry_grid b\n  ON b.season = s.season AND b.round = s.round AND b.session_code = s.session_code\n AND b.lap_id = $lap_b\n AND b.grid_index = a.grid_index\nWHERE a.lap_id = $lap_a\nORDER BY a.grid_index",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [],
+            "limit": 50
+          }
+        }
+      ],
+      "transparent": false,
+      "pluginVersion": "12.4.3"
+    },
+    {
+      "id": 12,
+      "type": "trend",
+      "title": "Brake",
+      "description": "A flag, drawn as a step: it is never interpolated between samples.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "f1-postgres"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 27
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 15,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "stepAfter",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "",
+          "min": 0,
+          "max": 1
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "A"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "none"
+        },
+        "xField": "distance_m"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "f1-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH s AS (\n    SELECT season, round, session_code FROM dim_session WHERE session_id = $session\n)\nSELECT a.distance_m AS distance_m,\n       a.brake::int AS \"A\",\n       b.brake::int AS \"B\"\nFROM fact_telemetry_grid a\nJOIN s ON a.season = s.season AND a.round = s.round AND a.session_code = s.session_code\nJOIN fact_telemetry_grid b\n  ON b.season = s.season AND b.round = s.round AND b.session_code = s.session_code\n AND b.lap_id = $lap_b\n AND b.grid_index = a.grid_index\nWHERE a.lap_id = $lap_a\nORDER BY a.grid_index",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [],
+            "limit": 50
+          }
+        }
+      ],
+      "transparent": false,
+      "pluginVersion": "12.4.3"
+    },
+    {
+      "id": 13,
+      "type": "trend",
+      "title": "Gear",
+      "description": "A discrete channel, drawn as a step: it is never interpolated between samples.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "f1-postgres"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 27
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "stepAfter",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "",
+          "min": 0,
+          "max": 8
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "A"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "none"
+        },
+        "xField": "distance_m"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "f1-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH s AS (\n    SELECT season, round, session_code FROM dim_session WHERE session_id = $session\n)\nSELECT a.distance_m AS distance_m,\n       a.n_gear AS \"A\",\n       b.n_gear AS \"B\"\nFROM fact_telemetry_grid a\nJOIN s ON a.season = s.season AND a.round = s.round AND a.session_code = s.session_code\nJOIN fact_telemetry_grid b\n  ON b.season = s.season AND b.round = s.round AND b.session_code = s.session_code\n AND b.lap_id = $lap_b\n AND b.grid_index = a.grid_index\nWHERE a.lap_id = $lap_a\nORDER BY a.grid_index",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [],
+            "limit": 50
+          }
+        }
+      ],
+      "transparent": false,
+      "pluginVersion": "12.4.3"
+    },
+    {
+      "id": 14,
+      "type": "trend",
+      "title": "DRS",
+      "description": "FastF1's raw DRS code, drawn as a step: it is never interpolated. 8, 10, 12 and 14 mean the flap is open.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "f1-postgres"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 27
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "stepAfter",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "",
+          "min": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "A"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "none"
+        },
+        "xField": "distance_m"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "f1-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH s AS (\n    SELECT season, round, session_code FROM dim_session WHERE session_id = $session\n)\nSELECT a.distance_m AS distance_m,\n       a.drs AS \"A\",\n       b.drs AS \"B\"\nFROM fact_telemetry_grid a\nJOIN s ON a.season = s.season AND a.round = s.round AND a.session_code = s.session_code\nJOIN fact_telemetry_grid b\n  ON b.season = s.season AND b.round = s.round AND b.session_code = s.session_code\n AND b.lap_id = $lap_b\n AND b.grid_index = a.grid_index\nWHERE a.lap_id = $lap_a\nORDER BY a.grid_index",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [],
+            "limit": 50
+          }
+        }
+      ],
+      "transparent": false,
+      "pluginVersion": "12.4.3"
+    },
+    {
+      "id": 15,
+      "type": "row",
+      "title": "Where the time went",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 34
+      },
+      "panels": []
+    },
+    {
+      "id": 16,
+      "type": "barchart",
+      "title": "Micro-sector loss, B − A — above zero is time B lost",
+      "description": "Corner-phase micro-sectors (F009) in track order. A sector shorter than $min_sector_m m is noise on its own (F004), so it is not given its own bar — but the short ones are pooled into the last bar rather than dropped, because on a close pair of laps they can carry as much delta as the ranked ones. What is drawn therefore adds up to the Δt at the end of the last complete sector.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "f1-postgres"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 35
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": true,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineWidth": 1,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 3,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "barRadius": 0,
+        "barWidth": 0.8,
+        "fullHighlight": false,
+        "groupWidth": 0.7,
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "orientation": "auto",
+        "showValue": "never",
+        "stacking": "none",
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        },
+        "xField": "sector",
+        "xTickLabelRotation": -45,
+        "xTickLabelSpacing": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "f1-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH s AS (\n    SELECT season, round, session_code FROM dim_session WHERE session_id = $session\n)\nSELECT sector, \"Δ B−A\"\nFROM (\n    SELECT '#' || d.microsector_id || '  ' || coalesce(nullif(d.corners, ''), 'straight') || '  ·  ' || d.phase AS sector,\n           fb.time_s - fa.time_s AS \"Δ B−A\",\n           d.microsector_id AS ord\n    FROM dim_microsector d\n    CROSS JOIN s\n    JOIN fact_microsector fa\n      ON fa.season = s.season AND fa.round = s.round AND fa.session_code = s.session_code\n     AND fa.lap_id = $lap_a AND fa.grain = d.grain AND fa.microsector_id = d.microsector_id\n    JOIN fact_microsector fb\n      ON fb.season = s.season AND fb.round = s.round AND fb.session_code = s.session_code\n     AND fb.lap_id = $lap_b AND fb.grain = d.grain AND fb.microsector_id = d.microsector_id\n    WHERE d.session_id = $session\n      AND d.grain = 'corner_phase'\n      AND d.length_m >= $min_sector_m\n      AND NOT fa.partial\n      AND NOT fb.partial\n\n    UNION ALL\n\n    SELECT 'under ' || $min_sector_m || ' m  ·  ' || count(*) || ' sectors pooled',\n           sum(fb.time_s - fa.time_s),\n           1000000\n    FROM dim_microsector d\n    CROSS JOIN s\n    JOIN fact_microsector fa\n      ON fa.season = s.season AND fa.round = s.round AND fa.session_code = s.session_code\n     AND fa.lap_id = $lap_a AND fa.grain = d.grain AND fa.microsector_id = d.microsector_id\n    JOIN fact_microsector fb\n      ON fb.season = s.season AND fb.round = s.round AND fb.session_code = s.session_code\n     AND fb.lap_id = $lap_b AND fb.grain = d.grain AND fb.microsector_id = d.microsector_id\n    WHERE d.session_id = $session\n      AND d.grain = 'corner_phase'\n      AND d.length_m < $min_sector_m\n      AND NOT fa.partial\n      AND NOT fb.partial\n    HAVING count(*) > 0\n) ranked\nORDER BY ord",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [],
+            "limit": 50
+          }
+        }
+      ],
+      "pluginVersion": "12.4.3"
+    },
+    {
+      "id": 17,
+      "type": "table",
+      "title": "Every micro-sector, including the short ones",
+      "description": "The footer sums the Δ column. Because these sectors partition the lap, that sum is the Δt at the end of the last complete sector — the closure F004 proved and the test asserts.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "f1-postgres"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 45
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true,
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Δ B−A s"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "gradient",
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "red",
+                      "value": 0
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "A s"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "B s"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": [
+            "Δ B−A s"
+          ],
+          "reducer": [
+            "sum"
+          ],
+          "show": true
+        },
+        "showHeader": true,
+        "sortBy": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "f1-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH s AS (\n    SELECT season, round, session_code FROM dim_session WHERE session_id = $session\n)\nSELECT d.microsector_id AS \"#\",\n       coalesce(nullif(d.corners, ''), 'straight') AS corners,\n       d.phase,\n       d.start_m  AS \"start m\",\n       d.length_m AS \"length m\",\n       d.length_m >= $min_sector_m AS ranked,\n       fa.time_s AS \"A s\",\n       fb.time_s AS \"B s\",\n       fb.time_s - fa.time_s AS \"Δ B−A s\"\nFROM dim_microsector d\nCROSS JOIN s\nJOIN fact_microsector fa\n  ON fa.season = s.season AND fa.round = s.round AND fa.session_code = s.session_code\n AND fa.lap_id = $lap_a AND fa.grain = d.grain AND fa.microsector_id = d.microsector_id\nJOIN fact_microsector fb\n  ON fb.season = s.season AND fb.round = s.round AND fb.session_code = s.session_code\n AND fb.lap_id = $lap_b AND fb.grain = d.grain AND fb.microsector_id = d.microsector_id\nWHERE d.session_id = $session\n  AND d.grain = 'corner_phase'\n  AND NOT fa.partial\n  AND NOT fb.partial\nORDER BY d.microsector_id",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [],
+            "limit": 50
+          }
+        }
+      ],
+      "pluginVersion": "12.4.3"
+    },
+    {
+      "id": 18,
+      "type": "row",
+      "title": "Corners — minimum speed and braking point, with their uncertainty",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 55
+      },
+      "panels": []
+    },
+    {
+      "id": 19,
+      "type": "table",
+      "title": "Corner by corner",
+      "description": "Every speed-trough event F009 found, braked or not: the two blank braking rows are the events that carry no braking at all, which is why they are also marked marginal. Each braking point carries its own ±, the spacing of the two telemetry samples that bracket it (decision D6) — a braking point interpolated across a 40 m gap is not the same measurement as one taken between samples 8 m apart. The Δ brake column names the ± 20 m window below which a difference is not a difference.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "f1-postgres"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 56
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true,
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "V_min A"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "velocitykmh"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "V_min B"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "velocitykmh"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ΔV_min"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "velocitykmh"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "gradient",
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 0
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "apex m"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthm"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "f1-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT coalesce(nullif(e.corners, ''), 'event ' || e.event_id) AS corner,\n       e.apex_m AS \"apex m\",\n       ma.v_min_kmh AS \"V_min A\",\n       mb.v_min_kmh AS \"V_min B\",\n       mb.v_min_kmh - ma.v_min_kmh AS \"ΔV_min\",\n       to_char(ma.brake_on_m::numeric, 'FM99990') || ' m ± '\n         || to_char(ma.brake_gap_m::numeric, 'FM9990') || ' m' AS \"brake A\",\n       to_char(mb.brake_on_m::numeric, 'FM99990') || ' m ± '\n         || to_char(mb.brake_gap_m::numeric, 'FM9990') || ' m' AS \"brake B\",\n       mb.brake_on_m - ma.brake_on_m AS \"Δ brake m (D6: ± 20 m is not a difference)\",\n       e.marginal AS \"marginal event\"\nFROM dim_corner_event e\nJOIN fact_corner_metric ma ON ma.lap_id = $lap_a AND ma.event_id = e.event_id\nJOIN fact_corner_metric mb ON mb.lap_id = $lap_b AND mb.event_id = e.event_id\nWHERE e.session_id = $session\nORDER BY e.apex_m",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [],
+            "limit": 50
+          }
+        }
+      ],
+      "pluginVersion": "12.4.3"
+    },
+    {
+      "id": 20,
+      "type": "barchart",
+      "title": "ΔV_min per corner, B − A — above zero is B carrying more speed",
+      "description": "Minimum speed is read from the 10 m grid, so it is a floor over a 10 m window rather than an instantaneous minimum (decision D6).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "f1-postgres"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 66
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": true,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineWidth": 1,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 1,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "velocitykmh"
+        },
+        "overrides": []
+      },
+      "options": {
+        "barRadius": 0,
+        "barWidth": 0.8,
+        "fullHighlight": false,
+        "groupWidth": 0.7,
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "orientation": "auto",
+        "showValue": "never",
+        "stacking": "none",
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        },
+        "xField": "corner",
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "f1-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT coalesce(nullif(e.corners, ''), 'event ' || e.event_id) AS corner,\n       mb.v_min_kmh - ma.v_min_kmh AS \"ΔV_min\"\nFROM dim_corner_event e\nJOIN fact_corner_metric ma ON ma.lap_id = $lap_a AND ma.event_id = e.event_id\nJOIN fact_corner_metric mb ON mb.lap_id = $lap_b AND mb.event_id = e.event_id\nWHERE e.session_id = $session\nORDER BY e.apex_m",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [],
+            "limit": 50
+          }
+        }
+      ],
+      "pluginVersion": "12.4.3"
+    },
+    {
+      "id": 21,
+      "type": "row",
+      "title": "The session",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 74
+      },
+      "panels": []
+    },
+    {
+      "id": 22,
+      "type": "table",
+      "title": "Every lap",
+      "description": "The whole session, quickest first. 'reference' marks the lap F004 used as the session default — the Δt stored in fact_telemetry_grid is against that lap, while this dashboard subtracts the two selected laps directly.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "f1-postgres"
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 10,
+        "x": 0,
+        "y": 75
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true,
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "lap time s"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "grid − official s"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "f1-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT code AS driver,\n       lap_number AS lap,\n       lap_time_s AS \"lap time s\",\n       compound,\n       stint,\n       tyre_life AS \"tyre life\",\n       lap_residual_s AS \"grid − official s\",\n       is_reference AS reference\nFROM dim_lap\nWHERE session_id = $session\nORDER BY lap_time_s NULLS LAST",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [],
+            "limit": 50
+          }
+        }
+      ],
+      "pluginVersion": "12.4.3"
+    },
+    {
+      "id": 23,
+      "type": "table",
+      "title": "Stint pace — $driver_a and $driver_b",
+      "description": "Seconds spent in each corner phase over a whole lap, averaged across the laps of a stint. Only laps carrying every sector of that phase are counted, so a lap that ended early cannot look quick — which is why the lap count differs by phase: most laps end inside a straight, so 'straight' is computed over fewer of them. Two drivers only, because stint numbers are per driver and pooling them across the field would compare unrelated things.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "f1-postgres"
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 14,
+        "x": 10,
+        "y": 75
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true,
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "mean s"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "std s"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "f1-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH s AS (\n    SELECT season, round, session_code FROM dim_session WHERE session_id = $session\n),\nsectors AS (\n    SELECT microsector_id, phase\n    FROM dim_microsector\n    WHERE session_id = $session\n      AND grain = 'corner_phase'\n      AND length_m >= $min_sector_m\n),\nexpected AS (\n    SELECT phase, count(*) AS n_expected FROM sectors GROUP BY phase\n),\nper_lap AS (\n    SELECT l.lap_id, l.code, l.compound, l.stint, sec.phase,\n           sum(f.time_s) AS phase_time_s,\n           count(*)      AS n_sectors\n    FROM fact_microsector f\n    CROSS JOIN s\n    JOIN dim_lap l ON l.lap_id = f.lap_id\n    JOIN sectors sec ON sec.microsector_id = f.microsector_id\n    WHERE f.season = s.season AND f.round = s.round AND f.session_code = s.session_code\n      AND f.grain = 'corner_phase'\n      AND NOT f.partial\n      AND f.time_s IS NOT NULL\n      AND l.session_id = $session\n    GROUP BY l.lap_id, l.code, l.compound, l.stint, sec.phase\n)\nSELECT p.code AS driver, p.compound, p.stint, p.phase,\n       count(*) AS laps,\n       avg(p.phase_time_s)          AS \"mean s\",\n       stddev_samp(p.phase_time_s)  AS \"std s\"\nFROM per_lap p\nJOIN expected e ON e.phase = p.phase AND e.n_expected = p.n_sectors\nWHERE p.code IN (${driver_a:sqlstring}, ${driver_b:sqlstring})\nGROUP BY p.code, p.compound, p.stint, p.phase\nORDER BY p.code, p.stint, p.phase",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [],
+            "limit": 50
+          }
+        }
+      ],
+      "pluginVersion": "12.4.3"
+    },
+    {
+      "id": 24,
+      "type": "table",
+      "title": "Compound pace across the field",
+      "description": "Every driver's laps pooled by compound, so the spread carries driver skill as well as tyre behaviour: read the mean as a compound comparison and the std as a reminder of that. A qualifying session usually runs one compound, which makes this a one-row-per-phase table until a race is loaded.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "f1-postgres"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 87
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true,
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "mean s"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "std s"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "best s"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "f1-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH s AS (\n    SELECT season, round, session_code FROM dim_session WHERE session_id = $session\n),\nsectors AS (\n    SELECT microsector_id, phase\n    FROM dim_microsector\n    WHERE session_id = $session\n      AND grain = 'corner_phase'\n      AND length_m >= $min_sector_m\n),\nexpected AS (\n    SELECT phase, count(*) AS n_expected FROM sectors GROUP BY phase\n),\nper_lap AS (\n    SELECT l.lap_id, l.code, l.compound, l.stint, sec.phase,\n           sum(f.time_s) AS phase_time_s,\n           count(*)      AS n_sectors\n    FROM fact_microsector f\n    CROSS JOIN s\n    JOIN dim_lap l ON l.lap_id = f.lap_id\n    JOIN sectors sec ON sec.microsector_id = f.microsector_id\n    WHERE f.season = s.season AND f.round = s.round AND f.session_code = s.session_code\n      AND f.grain = 'corner_phase'\n      AND NOT f.partial\n      AND f.time_s IS NOT NULL\n      AND l.session_id = $session\n    GROUP BY l.lap_id, l.code, l.compound, l.stint, sec.phase\n)\nSELECT p.compound, p.phase,\n       count(DISTINCT p.code) AS drivers,\n       count(*) AS laps,\n       avg(p.phase_time_s)         AS \"mean s\",\n       stddev_samp(p.phase_time_s) AS \"std s\",\n       min(p.phase_time_s)         AS \"best s\"\nFROM per_lap p\nJOIN expected e ON e.phase = p.phase AND e.n_expected = p.n_sectors\nGROUP BY p.compound, p.phase\nORDER BY p.phase, p.compound",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [],
+            "limit": 50
+          }
+        }
+      ],
+      "pluginVersion": "12.4.3"
+    }
+  ],
+  "preload": false,
+  "refresh": "",
+  "schemaVersion": 39,
+  "tags": [
+    "f1",
+    "microsector",
+    "pit-wall"
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "session",
+        "label": "Session",
+        "description": "Every session loaded by F005, newest first.",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "f1-postgres"
+        },
+        "query": "SELECT session_id AS __value,\n       season || ' R' || round || ' ' || session_code || ' — ' || event_name AS __text\nFROM dim_session\nORDER BY season DESC, round DESC, session_code",
+        "definition": "SELECT session_id AS __value,\n       season || ' R' || round || ' ' || session_code || ' — ' || event_name AS __text\nFROM dim_session\nORDER BY season DESC, round DESC, session_code",
+        "refresh": 1,
+        "sort": 0,
+        "regex": "",
+        "multi": false,
+        "includeAll": false,
+        "hide": 0,
+        "skipUrlSync": false,
+        "current": {},
+        "options": []
+      },
+      {
+        "name": "driver_a",
+        "label": "Driver A",
+        "description": "Ordered by best lap, so this defaults to the fastest driver in the session.",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "f1-postgres"
+        },
+        "query": "SELECT code\nFROM dim_lap\nWHERE session_id = $session\nGROUP BY code\nORDER BY min(lap_time_s) NULLS LAST",
+        "definition": "SELECT code\nFROM dim_lap\nWHERE session_id = $session\nGROUP BY code\nORDER BY min(lap_time_s) NULLS LAST",
+        "refresh": 1,
+        "sort": 0,
+        "regex": "",
+        "multi": false,
+        "includeAll": false,
+        "hide": 0,
+        "skipUrlSync": false,
+        "current": {},
+        "options": []
+      },
+      {
+        "name": "driver_b",
+        "label": "Driver B",
+        "description": "Driver A is excluded, so this defaults to the second fastest and a lap is never compared with itself.",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "f1-postgres"
+        },
+        "query": "SELECT code\nFROM dim_lap\nWHERE session_id = $session\n  AND code <> ${driver_a:sqlstring}\nGROUP BY code\nORDER BY min(lap_time_s) NULLS LAST",
+        "definition": "SELECT code\nFROM dim_lap\nWHERE session_id = $session\n  AND code <> ${driver_a:sqlstring}\nGROUP BY code\nORDER BY min(lap_time_s) NULLS LAST",
+        "refresh": 1,
+        "sort": 0,
+        "regex": "",
+        "multi": false,
+        "includeAll": false,
+        "hide": 0,
+        "skipUrlSync": false,
+        "current": {},
+        "options": []
+      },
+      {
+        "name": "lap_a",
+        "label": "Lap A",
+        "description": "Ordered by lap time, so this defaults to the driver's fastest lap (decision D7: the reference is a parameter).",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "f1-postgres"
+        },
+        "query": "SELECT lap_id AS __value,\n       'L' || lap_number || '  ·  '\n       || coalesce(to_char(lap_time_s::numeric, 'FM990.000') || ' s', 'no time') AS __text\nFROM dim_lap\nWHERE session_id = $session\n  AND code = ${driver_a:sqlstring}\nORDER BY lap_time_s NULLS LAST, lap_number",
+        "definition": "SELECT lap_id AS __value,\n       'L' || lap_number || '  ·  '\n       || coalesce(to_char(lap_time_s::numeric, 'FM990.000') || ' s', 'no time') AS __text\nFROM dim_lap\nWHERE session_id = $session\n  AND code = ${driver_a:sqlstring}\nORDER BY lap_time_s NULLS LAST, lap_number",
+        "refresh": 1,
+        "sort": 0,
+        "regex": "",
+        "multi": false,
+        "includeAll": false,
+        "hide": 0,
+        "skipUrlSync": false,
+        "current": {},
+        "options": []
+      },
+      {
+        "name": "lap_b",
+        "label": "Lap B",
+        "description": "Ordered by lap time, so this defaults to the driver's fastest lap.",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "f1-postgres"
+        },
+        "query": "SELECT lap_id AS __value,\n       'L' || lap_number || '  ·  '\n       || coalesce(to_char(lap_time_s::numeric, 'FM990.000') || ' s', 'no time') AS __text\nFROM dim_lap\nWHERE session_id = $session\n  AND code = ${driver_b:sqlstring}\nORDER BY lap_time_s NULLS LAST, lap_number",
+        "definition": "SELECT lap_id AS __value,\n       'L' || lap_number || '  ·  '\n       || coalesce(to_char(lap_time_s::numeric, 'FM990.000') || ' s', 'no time') AS __text\nFROM dim_lap\nWHERE session_id = $session\n  AND code = ${driver_b:sqlstring}\nORDER BY lap_time_s NULLS LAST, lap_number",
+        "refresh": 1,
+        "sort": 0,
+        "regex": "",
+        "multi": false,
+        "includeAll": false,
+        "hide": 0,
+        "skipUrlSync": false,
+        "current": {},
+        "options": []
+      },
+      {
+        "name": "min_sector_m",
+        "label": "Shortest ranked micro-sector (m)",
+        "description": "F004: a micro-sector shorter than about three grid bins carries more noise than signal, so it is not ranked. It is still listed in the table and still counted in the closure.",
+        "type": "constant",
+        "query": "30",
+        "current": {
+          "selected": false,
+          "text": "30",
+          "value": "30"
+        },
+        "hide": 2,
+        "skipUrlSync": true
+      }
+    ]
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {
+    "hidden": true
+  },
+  "timezone": "utc",
+  "title": "Pit wall — lap comparison",
+  "uid": "f1-pit-wall",
+  "version": 1,
+  "weekStart": ""
+}

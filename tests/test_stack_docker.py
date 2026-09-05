@@ -7,55 +7,24 @@ running -- teardown is the caller's, so a failed run can be inspected.
 
 from __future__ import annotations
 
-import base64
-import json
 import os
 import shutil
 import subprocess
 import time
-import urllib.error
-import urllib.request
-from pathlib import Path
 
 import pytest
 
 from src.config import PROJECT_ROOT
+from tests.stack_env import SERVICIOS, env_values, grafana_api
 
 pytestmark = pytest.mark.docker
 
-SERVICIOS = PROJECT_ROOT / "servicios"
 COMPOSE = ["docker", "compose", "-f", str(SERVICIOS / "docker-compose.yml"), "--profile", "core"]
 STARTUP_TIMEOUT_S = 180
 
 
 def _run(args: list[str], **kwargs) -> subprocess.CompletedProcess:
     return subprocess.run(args, capture_output=True, text=True, timeout=600, **kwargs)
-
-
-class StackEnv(dict):
-    """The local .env with a repr that hides its values.
-
-    pytest prints fixture values when an assertion fails, so a plain dict would
-    put passwords into the terminal and into logs. Values stay usable; only the
-    representation is blind.
-    """
-
-    def __repr__(self) -> str:
-        return f"<StackEnv: {len(self)} keys, values hidden>"
-
-    __str__ = __repr__
-
-
-def env_values() -> StackEnv:
-    """The local .env. Values are secrets: never printed, never asserted on."""
-    path = SERVICIOS / ".env"
-    if not path.exists():
-        pytest.skip("servicios/.env is absent; copy .env.example and fill it in")
-    return StackEnv(
-        (line.split("=", 1)[0].strip(), line.split("=", 1)[1].strip())
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if "=" in line and not line.strip().startswith("#")
-    )
 
 
 def container(service: str, env: dict[str, str]) -> str:
@@ -97,14 +66,6 @@ def psql(env: dict[str, str], user_key: str, password_key: str, sql: str) -> sub
          "psql", "-U", env[user_key], "-d", env["POSTGRES_DB"], "-tAc", sql],
         env={**os.environ, "PGPASSWORD": env[password_key]},
     )
-
-
-def grafana_api(env: dict[str, str], path: str) -> dict:
-    url = f"http://127.0.0.1:{env['GRAFANA_PORT']}{path}"
-    token = base64.b64encode(f"{env['GRAFANA_ADMIN_USER']}:{env['GRAFANA_ADMIN_PASSWORD']}".encode()).decode()
-    request = urllib.request.Request(url, headers={"Authorization": f"Basic {token}"})
-    with urllib.request.urlopen(request, timeout=30) as response:
-        return json.loads(response.read().decode())
 
 
 @pytest.fixture(scope="module")
