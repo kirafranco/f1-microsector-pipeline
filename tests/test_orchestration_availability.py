@@ -34,6 +34,7 @@ def fastf1_exceptions() -> dict[str, type[BaseException]]:
         "DataNotLoadedError": exceptions.DataNotLoadedError,
         "NoLapDataError": exceptions.NoLapDataError,
         "InvalidSessionError": exceptions.InvalidSessionError,
+        "RateLimitExceededError": exceptions.RateLimitExceededError,
     }
 
 
@@ -56,6 +57,24 @@ class TestClassify:
 
     def test_a_timeout_is_worth_retrying(self) -> None:
         assert classify(TimeoutError("read timed out")) is Availability.TRANSIENT
+
+    def test_being_rate_limited_is_worth_waiting_out(self) -> None:
+        """A season backfill is the first time this project asks the backend for
+        more than one session in an hour (F015). The exception carries no HTTP
+        status and no timeout in its name, so without this it would read as
+        permanent and the pipeline would abandon a session that only needed to
+        wait -- which is what the sensor's backoff exists for."""
+        limited = fastf1_exceptions()["RateLimitExceededError"]("rate limit exceeded")
+        assert classify(limited) is Availability.TRANSIENT
+        assert Availability.TRANSIENT.should_wait is True
+
+    def test_the_rate_limit_beats_the_critical_family_it_belongs_to(self) -> None:
+        """It is a FastF1CriticalError, which is exactly why it needs naming:
+        the family says "do not swallow this", not "never try again"."""
+        import fastf1.exceptions as exceptions
+        limited = fastf1_exceptions()["RateLimitExceededError"]("slow down")
+        assert isinstance(limited, exceptions.FastF1CriticalError)
+        assert classify(limited) is not Availability.PERMANENT
 
     def test_an_unrecognised_failure_is_not_waited_on(self) -> None:
         """A ValueError in the pipeline is a bug, not a publishing delay."""

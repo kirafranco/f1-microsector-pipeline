@@ -35,6 +35,30 @@ def at_grid_zero(frame: pd.DataFrame, parents: Mapping[str, pd.DataFrame]) -> pd
     return frame["grid_index"].astype("Int64").fillna(-1) == 0
 
 
+def before_first_sample(frame: pd.DataFrame, parents: Mapping[str, pd.DataFrame]) -> pd.Series:
+    """Grid points ahead of a lap's first real sample bracket no source pair.
+
+    Grid zero is the usual case and was once the only one assumed. It is not:
+    the shared axis has one origin for the whole session, so a lap whose
+    telemetry opened later than the rest can have several leading grid points
+    with nothing behind them -- six of them on one lap of the 2024 Australian
+    Grand Prix (F015). Those points are interpolated from one side and carry no
+    source gap, which is a fact about them rather than a defect.
+    """
+    if "source_gap_m" not in frame.columns:
+        return frame["grid_index"].astype("Int64").fillna(-1) == 0
+    index = frame["grid_index"].astype("Int64").fillna(-1)
+    first_real = (
+        frame.assign(_i=index)
+        .loc[frame["source_gap_m"].notna()]
+        .groupby(["driver", "lap_number"], observed=True)["_i"]
+        .min()
+    )
+    per_row = pd.MultiIndex.from_arrays([frame["driver"], frame["lap_number"]])
+    threshold = pd.Series(first_real.reindex(per_row).to_numpy(), index=frame.index)
+    return index.to_numpy() < threshold.fillna(0).to_numpy()
+
+
 def event_has_no_braking(frame: pd.DataFrame, parents: Mapping[str, pd.DataFrame]) -> pd.Series:
     """A lift-only corner has no braking point to record."""
     return ~frame["has_braking"].fillna(False).astype(bool)

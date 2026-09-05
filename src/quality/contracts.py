@@ -13,8 +13,55 @@ from src.quality.engine import TableContract
 from src.quality.rules import ERROR, WARNING, AllowedValues, ForeignKey, Invariant, NotNull, Range, Unique
 from src.reference.tables import SESSION_CODES
 
-#: FastF1's DRS code set. Anything else is undocumented and worth a look.
-DRS_CODES = (0, 1, 8, 9, 10, 12, 14)
+#: DRS is a status byte, and the check is that it is a plausible one.
+#:
+#: This was an enumeration of the seven codes a single qualifying session
+#: happened to contain. Running the 2024 season through it produced 2, 3, 11,
+#: 13 and 15 as well -- each one blocking a whole race until it was added, and
+#: each addition no more principled than the last. An enumeration that has to
+#: be extended every time new data arrives is not describing the vocabulary; it
+#: is describing the sample it was written from.
+#:
+#: FastF1 passes the byte through from the timing feed. 0-15 is its range, the
+#: documented meanings cover most of it (0-3 off, 8 eligible, 10/12/14 on), and
+#: a value outside it means the channel is not DRS at all -- which is what a
+#: contract can honestly assert here (F015).
+DRS_CODES = tuple(range(16))
+
+#: A lap's delta is null where it does not share a grid point with the session
+#: reference lap. In qualifying, where every timed lap is a flat-out lap of
+#: much the same length, that is a sliver -- 0.5 % was the measured figure. A
+#: race is not that: safety cars, traffic and pit laps mean far more of the
+#: grid is unshared, and the Dutch Grand Prix measured 0.65 %. Raised to cover
+#: a race while still catching a reference lap that shares almost nothing,
+#: which would make every delta in the session meaningless (F015).
+UNSHARED_GRID_FRACTION = 0.02
+
+#: Atmospheric pressure at a circuit, not at sea level. Mexico City sits at
+#: 2,240 m and reports 784 hPa; Spielberg 938 and Spa 966. The old 800 hPa
+#: floor described a sea-level circuit and blocked the Mexican Grand Prix
+#: outright (F015). 700 hPa is below anything the calendar can reach and still
+#: catches a sensor reporting nonsense.
+#:
+#: The live timing feed occasionally emits a nonsense sample: 49 of the ~300k
+#: in the 2024 Miami Grand Prix report a gear of 72, and two samples of the
+#: British Grand Prix project more than 100 m from the reference line -- a car
+#: off the track or in the pit lane, which a race contains and a qualifying
+#: session does not. Global CLAUDE.md 3.1 says a corrupt record is logged and
+#: skipped, not that the batch stops, so the *per-sample physical bounds* on
+#: live telemetry channels tolerate this fraction (F015).
+#:
+#: Deliberately narrow. It applies to channel ranges only; uniqueness, foreign
+#: keys, invariants and completeness stay absolute, because those failing means
+#: the pipeline is wrong rather than the feed. And it is small enough that a
+#: channel which has actually broken still fails the session.
+GLITCH_FRACTION = 1e-3
+
+#: Throttle is a percentage that the source does not keep inside 0-100: the
+#: raw car telemetry for the 2024 Australian Grand Prix reaches 104.0 in 293
+#: samples. Measured, not assumed (F015). The band admits the source's own
+#: overshoot and still catches a channel that has genuinely broken.
+THROTTLE_MAX_PCT = 110.0
 #: F012 session codes (FP1..R) come from the reference tables module, so the
 #: allowed-value rule and the builder can never drift apart.
 #: Corner phases F009 emits, plus the fixed-bin label.
@@ -58,12 +105,12 @@ CONTRACTS: dict[str, TableContract] = {
             NotNull(check_columns=("driver", "lap_number", "session_time", "speed", "throttle", "brake", "rpm", "n_gear", "drs")),
             Unique(key=_RAW_TELEMETRY_KEY),
             ForeignKey(key=_LAP_KEY, parent="laps"),
-            Range(column="speed", low=0.0, high=400.0),
+            Range(column="speed", low=0.0, high=400.0, max_fraction=GLITCH_FRACTION),
             # FastF1 reports slightly over 100 % on out-laps; the grid, built from
             # flying laps only, stays at 100. The envelope tolerates both.
-            Range(column="throttle", low=0.0, high=110.0),
-            Range(column="rpm", low=0.0, high=16000.0),
-            Range(column="n_gear", low=0, high=8),
+            Range(column="throttle", low=0.0, high=THROTTLE_MAX_PCT, max_fraction=GLITCH_FRACTION),
+            Range(column="rpm", low=0.0, high=16000.0, max_fraction=GLITCH_FRACTION),
+            Range(column="n_gear", low=0, high=8, max_fraction=GLITCH_FRACTION),
             AllowedValues(column="drs", values=DRS_CODES),
         ],
         parents=("laps",),
@@ -76,8 +123,8 @@ CONTRACTS: dict[str, TableContract] = {
             ForeignKey(key=_LAP_KEY, parent="laps"),
             # Position arrives in 1/10 m (F008 finding), so the envelope is ten
             # times the metre one: no circuit spans 5 km from its origin.
-            Range(column="x", low=-50000.0, high=50000.0),
-            Range(column="y", low=-50000.0, high=50000.0),
+            Range(column="x", low=-50000.0, high=50000.0, max_fraction=GLITCH_FRACTION),
+            Range(column="y", low=-50000.0, high=50000.0, max_fraction=GLITCH_FRACTION),
         ],
         parents=("laps",),
     ),
@@ -89,7 +136,7 @@ CONTRACTS: dict[str, TableContract] = {
             Range(column="air_temp", low=-20.0, high=60.0),
             Range(column="track_temp", low=-20.0, high=80.0),
             Range(column="humidity", low=0.0, high=100.0),
-            Range(column="pressure", low=800.0, high=1100.0),
+            Range(column="pressure", low=700.0, high=1100.0),
             Range(column="wind_speed", low=0.0, high=60.0),
             Range(column="wind_direction", low=0, high=360),
         ],
@@ -115,18 +162,18 @@ CONTRACTS: dict[str, TableContract] = {
             Invariant(name="aligned_laps_are_accurate", check=p.aligned_laps_are_accurate, about=_LAP_KEY),
             Invariant(name="aligned_distance_non_decreasing", check=p.aligned_distance_non_decreasing,
                       about=("distance_aligned",)),
-            Range(column="speed", low=0.0, high=400.0),
-            Range(column="throttle", low=0.0, high=110.0),
-            Range(column="rpm", low=0.0, high=16000.0),
-            Range(column="n_gear", low=0, high=8),
+            Range(column="speed", low=0.0, high=400.0, max_fraction=GLITCH_FRACTION),
+            Range(column="throttle", low=0.0, high=THROTTLE_MAX_PCT, max_fraction=GLITCH_FRACTION),
+            Range(column="rpm", low=0.0, high=16000.0, max_fraction=GLITCH_FRACTION),
+            Range(column="n_gear", low=0, high=8, max_fraction=GLITCH_FRACTION),
             AllowedValues(column="drs", values=DRS_CODES),
             # Metres now: positions were converted out of FastF1's 1/10 m units.
-            Range(column="x", low=-5000.0, high=5000.0),
-            Range(column="y", low=-5000.0, high=5000.0),
-            Range(column="distance_raw", low=0.0, high=10000.0),
+            Range(column="x", low=-5000.0, high=5000.0, max_fraction=GLITCH_FRACTION),
+            Range(column="y", low=-5000.0, high=5000.0, max_fraction=GLITCH_FRACTION),
+            Range(column="distance_raw", low=0.0, high=10000.0, max_fraction=GLITCH_FRACTION),
             # The axis may start slightly before the reference line (F010).
-            Range(column="distance_aligned", low=-200.0, high=10000.0),
-            Range(column="line_offset_m", low=0.0, high=100.0),
+            Range(column="distance_aligned", low=-200.0, high=10000.0, max_fraction=GLITCH_FRACTION),
+            Range(column="line_offset_m", low=0.0, high=100.0, max_fraction=GLITCH_FRACTION),
         ],
         parents=("laps",),
     ),
@@ -136,7 +183,7 @@ CONTRACTS: dict[str, TableContract] = {
         [
             NotNull(check_columns=("driver", "lap_number", "grid_index", "distance_m", "elapsed_time",
                                    "speed", "throttle", "rpm", "x", "y", "n_gear", "brake", "drs")),
-            NotNull(check_columns=("source_gap_m",), unless=p.at_grid_zero),
+            NotNull(check_columns=("source_gap_m",), unless=p.before_first_sample),
             Unique(key=_GRID_KEY),
             ForeignKey(key=_LAP_KEY, parent="telemetry_aligned"),
             Invariant(name="grid_distance_matches_index", check=p.grid_distance_matches_index,
@@ -148,14 +195,14 @@ CONTRACTS: dict[str, TableContract] = {
             Range(column="grid_index", low=0, high=10000),
             Range(column="distance_m", low=0.0, high=100000.0),
             Range(column="elapsed_time", low=0.0, high=300.0),
-            Range(column="speed", low=0.0, high=400.0),
-            Range(column="throttle", low=0.0, high=100.0),
-            Range(column="rpm", low=0.0, high=16000.0),
-            Range(column="n_gear", low=0, high=8),
+            Range(column="speed", low=0.0, high=400.0, max_fraction=GLITCH_FRACTION),
+            Range(column="throttle", low=0.0, high=THROTTLE_MAX_PCT, max_fraction=GLITCH_FRACTION),
+            Range(column="rpm", low=0.0, high=16000.0, max_fraction=GLITCH_FRACTION),
+            Range(column="n_gear", low=0, high=8, max_fraction=GLITCH_FRACTION),
             AllowedValues(column="drs", values=DRS_CODES),
-            Range(column="x", low=-5000.0, high=5000.0),
-            Range(column="y", low=-5000.0, high=5000.0),
-            Range(column="source_gap_m", low=0.0, high=500.0),
+            Range(column="x", low=-5000.0, high=5000.0, max_fraction=GLITCH_FRACTION),
+            Range(column="y", low=-5000.0, high=5000.0, max_fraction=GLITCH_FRACTION),
+            Range(column="source_gap_m", low=0.0, high=500.0, max_fraction=GLITCH_FRACTION),
         ],
         parents=("telemetry_aligned",),
     ),
@@ -200,7 +247,7 @@ CONTRACTS: dict[str, TableContract] = {
             Unique(key=("number", "letter")),
             ForeignKey(key=("event_id",), parent="events", nullable=True),
             Range(column="distance_m", low=0.0, high=100000.0),
-            Range(column="line_offset_m", low=0.0, high=100.0),
+            Range(column="line_offset_m", low=0.0, high=100.0, max_fraction=GLITCH_FRACTION),
         ],
         parents=("events",),
     ),
@@ -211,7 +258,7 @@ CONTRACTS: dict[str, TableContract] = {
             NotNull(check_columns=("driver", "lap_number", "grid_index", "t_s", "reference", "reference_kind")),
             # Null beyond the reference lap's last point: the rows cannot be
             # identified from this frame alone, so a documented sliver is allowed.
-            NotNull(check_columns=("delta_t_s",), max_fraction=0.005),
+            NotNull(check_columns=("delta_t_s",), max_fraction=UNSHARED_GRID_FRACTION),
             Unique(key=_GRID_KEY),
             ForeignKey(key=_GRID_KEY, parent="grid"),
             AllowedValues(column="reference_kind", values=REFERENCE_KINDS),

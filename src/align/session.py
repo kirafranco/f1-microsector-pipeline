@@ -166,6 +166,55 @@ def build_session_reference_line(
     return build_reference_line(seed[["x", "y"]].to_numpy(dtype=float)), label
 
 
+#: How far past the reference line's own origin the axis may be moved to find
+#: one every lap covers. A session where some lap's telemetry opens later than
+#: this has a lap with a real coverage problem, which F010 flags rather than
+#: the axis accommodating it; 150 m is about 1.9 s at racing speed.
+MAX_ORIGIN_SHIFT_M = 150.0
+
+
+def place_axis_origin(frames: "list[pd.DataFrame]") -> "tuple[list[pd.DataFrame], float]":
+    """Shift the shared axis so distance zero is covered by nearly every lap.
+
+    The resampler grids from distance zero, and interpolating a lap's time
+    channel there needs a real sample at or before it. The reference line's own
+    origin is wherever the seed lap's telemetry happened to open, which is an
+    accident of that one lap: at Suzuka it opened 30 m past the timing line and
+    every other lap therefore had data to spare, while at Bahrain it opened
+    2 m past, most laps began 12 m further on, and the first two grid points
+    were extrapolated -- a -0.19 s bias on every reconstructed lap time.
+
+    So the origin is placed rather than inherited: distance zero moves to the
+    *latest* opening in the session, so that every lap has a real sample at or
+    before it. Not a high quantile -- 95 % was tried, and the remaining 5 % of
+    laps in the Australian Grand Prix produced a time channel that did not
+    increase across their first grid point, which is both a false lap time and
+    an F011 contract failure that blocks the whole session from loading.
+
+    Nothing else about the axis changes: it is one subtraction, so every
+    distance *between* two points is what it was, and so is every lap and
+    sector time built on them.
+    """
+    if not frames:
+        return frames, 0.0
+    firsts = np.array([float(f["distance_aligned"].iloc[0]) for f in frames])
+    shift = float(firsts.max())
+    if shift > MAX_ORIGIN_SHIFT_M:
+        logger.warning("axis_origin_shift_capped wanted_m=%.1f cap_m=%.1f", shift, MAX_ORIGIN_SHIFT_M)
+        shift = MAX_ORIGIN_SHIFT_M
+    if abs(shift) < 1e-9:
+        return frames, 0.0
+
+    shifted = []
+    for frame in frames:
+        out = frame.copy()
+        out["distance_aligned"] = out["distance_aligned"] - shift
+        shifted.append(out)
+    covered = int((firsts <= shift + 1e-9).sum())
+    logger.info("axis_origin_placed shift_m=%.1f covered=%d/%d", shift, covered, len(frames))
+    return shifted, shift
+
+
 def align_session(
     snapshot_root: Path,
     out_root: Path | None = None,
@@ -248,11 +297,18 @@ def align_session(
     if not aligned_frames:
         raise RuntimeError(f"{snapshot_root}: no lap aligned ({len(rejected)} rejected)")
 
+    origin_shift_m = 0.0
+    if method == "projection":
+        aligned_frames, origin_shift_m = place_axis_origin(aligned_frames)
+
     telemetry = pd.concat(aligned_frames, ignore_index=True)
     anchors_out = pd.concat(anchor_rows, ignore_index=True)
     rejected_out = pd.DataFrame(rejected, columns=["driver", "lap_number", "reason"])
 
-    lap_lengths = np.array([float(f["distance_aligned"].iloc[-1]) for f in aligned_frames])
+    lap_lengths = np.array([
+        float(f["distance_aligned"].iloc[-1] - f["distance_aligned"].iloc[0])
+        for f in aligned_frames
+    ])
     median_length = float(np.median(lap_lengths))
     driven_lengths = np.array([float(f["distance_raw"].iloc[-1]) for f in raw_frames])
     length = LengthChecks(

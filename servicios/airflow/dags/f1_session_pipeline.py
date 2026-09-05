@@ -111,6 +111,11 @@ def f1_session_pipeline():
     def load(checked: dict, ingested: dict, **context) -> dict:
         return stages.load(SessionRun.from_params(context["params"]), ingested["snapshot_date"])
 
+    @task()
+    def summarise(loaded: dict, **context) -> dict:
+        """Refresh the per-circuit validation table over everything loaded."""
+        return stages.summarise(SessionRun.from_params(context["params"]))
+
     available = wait_for_data()
     ingested = ingest()
     aligned = align(ingested)
@@ -120,9 +125,10 @@ def f1_session_pipeline():
     validated = validate(measured, ingested)
     checked = quality(validated, ingested)
     loaded = load(checked, ingested)
+    summarised = summarise(loaded)
 
     available >> ingested
-    return loaded
+    return summarised
 
 
 f1_session_pipeline()

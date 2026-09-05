@@ -24,6 +24,7 @@ from src.metrics.session import compute_metrics
 from src.orchestration.paths import SessionRun, latest_snapshot_root
 from src.quality.session import check_session
 from src.segment.session import segment_session
+from src.validate.season import summarise_season, write_summary
 from src.validate.session import validate_session
 from src.warehouse.connection import Settings, connect
 from src.warehouse.load import load_session
@@ -217,6 +218,26 @@ def load(run: SessionRun, snapshot_date: str | None = None,
     }
 
 
+def summarise(run: SessionRun, snapshot_date: str | None = None) -> dict:
+    """Refresh the per-session validation table (F015).
+
+    Runs after the load so the table describes what is in the warehouse. It
+    reads every session's own F010 report rather than this one's, so the table
+    is complete after any run rather than accumulating -- which means a session
+    re-run with better alignment corrects its row instead of adding one.
+    """
+    frame = summarise_season()
+    path = write_summary(frame)
+    passing = int(frame["all_ok"].fillna(False).sum())
+    logger.info("stage_summarise %s sessions=%d passing=%d", run.label, len(frame), passing)
+    return {
+        "path": str(path),
+        "sessions": int(len(frame)),
+        "passing": passing,
+        "circuits": int(frame["circuit"].nunique(dropna=True)),
+    }
+
+
 #: The pipeline in order, for the DAG to wire and for a test to walk.
 PIPELINE: tuple[tuple[str, Any], ...] = (
     ("ingest", ingest),
@@ -227,4 +248,5 @@ PIPELINE: tuple[tuple[str, Any], ...] = (
     ("validate", validate),
     ("quality", quality),
     ("load", load),
+    ("summarise", summarise),
 )

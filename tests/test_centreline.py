@@ -52,10 +52,20 @@ class TestReferenceLine:
         assert steps.std() < 0.05
         assert steps.mean() == pytest.approx(2.0, abs=0.1)
 
-    def test_arc_length_starts_at_zero_and_increases(self) -> None:
+    def test_arc_zero_is_the_seed_lap_s_own_start(self) -> None:
+        """The lead-in carries negative arc, so zero stays where the seed lap's
+        telemetry began -- which is what the resampler grids from."""
         line = build_reference_line(_ring())
-        assert line.arc_length_m[0] == 0.0
+        assert line.arc_length_m[0] == pytest.approx(-line.lead_in_m)
+        assert line.start_m < 0.0
         assert np.all(np.diff(line.arc_length_m) > 0)
+        origin = int(np.argmin(np.abs(line.arc_length_m)))
+        assert line.arc_length_m[origin] == pytest.approx(0.0, abs=1.0)
+
+    def test_without_a_lead_in_arc_starts_at_zero(self) -> None:
+        line = build_reference_line(_ring(), lead_m=0.0)
+        assert line.arc_length_m[0] == 0.0
+        assert line.lead_in_m == 0.0
 
     def test_rejects_a_degenerate_path(self) -> None:
         with pytest.raises(ValueError, match=">=10 points"):

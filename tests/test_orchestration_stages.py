@@ -193,7 +193,7 @@ class TestThePipelineIsDeclaredInOrder:
     def test_every_stage_is_listed_once_and_in_order(self) -> None:
         names = [name for name, _ in stages.PIPELINE]
         assert names == ["ingest", "align", "grid", "segment", "metrics",
-                         "validate", "quality", "load"]
+                         "validate", "quality", "load", "summarise"]
         assert len(set(names)) == len(names)
 
     def test_each_entry_points_at_a_callable_in_this_module(self) -> None:
@@ -204,6 +204,11 @@ class TestThePipelineIsDeclaredInOrder:
         """F011's contract: nothing is written when quality fails."""
         names = [name for name, _ in stages.PIPELINE]
         assert names.index("quality") < names.index("load")
+
+    def test_the_summary_is_taken_after_the_load(self) -> None:
+        """The table describes what is in the warehouse, so it follows it."""
+        names = [name for name, _ in stages.PIPELINE]
+        assert names.index("load") < names.index("summarise")
 
 
 class _AlignStub:
