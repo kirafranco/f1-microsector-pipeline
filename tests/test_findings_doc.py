@@ -2,8 +2,11 @@
 
 A findings document drifts the moment someone edits a number in prose without
 rebuilding, so the figures it links must exist and the numbers it quotes in its
-result tables must appear in summary.json. The summary lives under data/, which
-a clone does not have, so those checks skip rather than fail there.
+result tables must appear in summary.json.
+
+Both sides of that comparison are local-only: the document lives under the
+gitignored docs/findings/, and the summary under data/. On a machine that has
+neither, this whole module skips -- it can only check a document that is there.
 """
 
 from __future__ import annotations
@@ -32,6 +35,11 @@ def normalise(text: str) -> str:
     the match happens on a normalised copy.
     """
     return text.replace("\u2212", "-").replace("\u2013", "-")
+
+
+#: docs/findings/ is gitignored, so a clone has no document to hold to anything.
+pytestmark = pytest.mark.skipif(not DOC.exists(),
+                                reason="docs/findings/ is local-only and absent here")
 
 
 @pytest.fixture(scope="module")

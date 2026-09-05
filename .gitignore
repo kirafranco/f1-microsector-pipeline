@@ -24,5 +24,9 @@ Thumbs.db
 harness/
 docs/decisions.md
 
+# Published findings, local-only for now. The result itself is summarised in
+# README.md, which is where anything that must survive a fresh clone belongs.
+docs/findings/
+
 # graphify knowledge graph: generated from the repo, rebuilt with `graphify update .`
 graphify-out/

@@ -72,10 +72,10 @@ notebooks/   # exploratory analysis only
 data/        # raw/interim/processed/cache — gitignored, never versioned
 tests/       # tests
 servicios/   # Docker Compose orchestration (one subfolder per service)
-docs/        # project brief and published findings
+docs/        # project brief; findings/ and decisions.md are local-only
 ```
 
-Spec-driven development state — the feature list, per-feature specs, progress records, and the decision log — is kept on disk and gitignored by design, so it will not appear in a clone. GitHub issues and milestones are the public view of the same plan.
+Spec-driven development state — the feature list, per-feature specs, progress records, the decision log, and for now the published findings under `docs/findings/` — is kept on disk and gitignored by design, so it will not appear in a clone. GitHub issues and milestones are the public view of the same plan.
 
 ## Environment
 
@@ -89,7 +89,7 @@ Spec-driven development state — the feature list, per-feature specs, progress 
 
 ## Findings
 
-**[Where did 0.066 seconds go? Suzuka 2024, Verstappen vs Pérez](docs/findings/2024-suzuka-q3-ver-per.md)**
+**Where did 0.066 seconds go? Suzuka 2024, Verstappen vs Pérez** — the write-up itself lives at `docs/findings/2024-suzuka-q3-ver-per.md` and is kept local for now, alongside the decision log and the feature harness, so it will not appear in a clone. What it found is recorded here, which is what survives.
 
 The pole gap does not decompose. Cut the lap into 35 corner-phase micro-sectors and no phase and no corner separates from zero by more than 1.6 times its own lap-to-lap spread — with 4 Hz public telemetry, 0.066 s has no attribution, and a bar chart that places it in a corner is showing noise with a label on it. What repetition does find is T5: Pérez is slower there on all sixteen pairings of the two drivers' timed laps, median +0.122 s, corroborated by a 2–5 km/h speed deficit and a later throttle pick-up on every quick-lap pairing, and absent when either driver is compared with his own other lap. Two method findings came out of the checking: a 100 m braking-point difference at T8–T9 turned out to be an artefact of taking the first brake application rather than the one that leads into the apex — 71 of the session's 74 laps dab the brake at the kink first — and the reconstruction's disagreement with official sector times, up to 0.058 s, is explained by the per-lap timing-versus-telemetry registration F010 already measures, to within 0.0035 s in every sector. Every number and all four figures are rebuilt from `data/` by `src/report/`; none is typed in by hand, and a test asserts the document quotes nothing the run did not produce.
 
