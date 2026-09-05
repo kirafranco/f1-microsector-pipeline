@@ -10,8 +10,15 @@ import pytest
 
 from src.config import DATA_ROOT, INTERIM_ROOT
 from src.segment import validation
-from src.segment.events import EVENT_SCHEMA
-from src.segment.phases import GRAIN_CORNER_PHASE, GRAIN_FIXED_100M, MICROSECTOR_SCHEMA
+from src.grid.resample import GRID_SPACING_M
+from src.segment.events import EVENT_SCHEMA, detect_events, median_traces
+from src.segment.phases import (
+    GRAIN_CORNER_PHASE,
+    GRAIN_FIXED_100M,
+    MICROSECTOR_SCHEMA,
+    build_corner_phases,
+    build_fixed_bins,
+)
 from src.segment.session import segment_session
 from tests import synthetic_session as syn
 
@@ -143,3 +150,65 @@ class TestSuzukaAcceptance:
 
     def test_everything_passes(self, suzuka) -> None:
         assert suzuka.report.ok
+
+
+GRID_ROOT = INTERIM_ROOT / "grid"
+MICRO_ROOT = INTERIM_ROOT / "microsectors"
+SEASON_SESSIONS = (
+    sorted(
+        p.name
+        for p in GRID_ROOT.glob("2024_*_projection")
+        if (p / "grid.parquet").exists() and (MICRO_ROOT / p.name / "events.parquet").exists()
+    )
+    if GRID_ROOT.exists()
+    else []
+)
+
+
+@pytest.mark.data
+@pytest.mark.skipif(not SEASON_SESSIONS, reason="no ingested sessions under data/interim/grid")
+class TestTheSeasonReproducesItsStoredTables:
+    """F018 criterion 3, on every session that is on disk.
+
+    Corner positions are read from the stored `corners_aligned.parquet` rather
+    than recomputed, so a difference here can only come from event detection --
+    the one thing F018 changes. The guard is on the live roots, so a session
+    that disappears fails the run instead of skipping it silently (F015 §5).
+    """
+
+    @staticmethod
+    @pytest.fixture(scope="class")
+    def redetected() -> dict[str, tuple[pd.DataFrame, pd.DataFrame]]:
+        out: dict[str, tuple[pd.DataFrame, pd.DataFrame]] = {}
+        for name in SEASON_SESSIONS:
+            grid = pd.read_parquet(GRID_ROOT / name / "grid.parquet")
+            corners = pd.read_parquet(MICRO_ROOT / name / "corners_aligned.parquet")
+            traces = median_traces(grid)
+            lap_length_m = float(len(traces) * GRID_SPACING_M)
+            events = detect_events(traces, corners)
+            sectors = pd.concat(
+                [build_corner_phases(events, lap_length_m), build_fixed_bins(lap_length_m)],
+                ignore_index=True,
+            )
+            out[name] = (events, sectors)
+        return out
+
+    def test_every_stored_table_is_reproduced(self, redetected) -> None:
+        differing = [
+            name
+            for name, (events, sectors) in redetected.items()
+            if not events.equals(pd.read_parquet(MICRO_ROOT / name / "events.parquet"))
+            or not sectors.equals(pd.read_parquet(MICRO_ROOT / name / "microsectors.parquet"))
+        ]
+        assert differing == []
+
+    def test_every_event_is_ordered(self, redetected) -> None:
+        for name, (events, _) in redetected.items():
+            assert (events["lift_m"] <= events["apex_start_m"]).all(), name
+            assert (events["apex_start_m"] < events["apex_end_m"]).all(), name
+            assert (events["apex_end_m"] <= events["exit_end_m"]).all(), name
+
+    def test_every_event_carries_a_corner_label(self, redetected) -> None:
+        unlabelled = {name: int(events["corners"].isna().sum())
+                      for name, (events, _) in redetected.items() if events["corners"].isna().any()}
+        assert unlabelled == {}

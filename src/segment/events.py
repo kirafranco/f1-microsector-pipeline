@@ -56,6 +56,10 @@ class EventParams:
     throttle_lift_pct: float = 90.0
     #: Corners within this margin of an event's extent are its labels.
     label_margin_m: float = 30.0
+    #: Fallback reach behind the apex band for an event the margin above leaves
+    #: unlabelled -- a flat-out corner, whose marker sits at the turn-in ahead
+    #: of the band (F018). Only markers no other event claimed are taken.
+    fallback_margin_m: float = 60.0
 
 
 @dataclass(frozen=True)
@@ -182,10 +186,6 @@ def detect_events(
             brake_off = int(approach[np.flatnonzero(on)[-1]]) + 1
         else:
             brake_on = brake_off = None
-        open_throttle = np.flatnonzero(th[approach % n] >= params.throttle_lift_pct)
-        lift = int(approach[open_throttle[-1]]) + 1 if len(open_throttle) else left_max
-        lift = min(lift, i)
-
         limit = trough.speed + params.apex_fraction * trough.prominence
         a0 = i
         while a0 - 1 > i_prev and sp[(a0 - 1) % n] <= limit:
@@ -194,6 +194,17 @@ def detect_events(
         while a1 + 1 < i_next and sp[(a1 + 1) % n] <= limit:
             a1 += 1
         a1 += 1  # half-open end
+
+        # The lift is sought on the approach *before the apex band*, not before
+        # the trough (F018). At a flat-out corner the median driver is still at
+        # full throttle when speed has already entered the band, so searching to
+        # the trough put the lift 10-20 m inside it and broke F011's ordering
+        # invariant. ``lift == a0`` now reads "no lift before the band" and
+        # yields no entry phase, which is how those events already segmented.
+        approach_pre = np.arange(left_max, a0 + 1)
+        open_throttle = np.flatnonzero(th[approach_pre % n] >= params.throttle_lift_pct)
+        lift = int(approach_pre[open_throttle[-1]]) + 1 if len(open_throttle) else left_max
+        lift = min(lift, a0)
 
         start = min(lift, a0) if brake_on is None else min(lift, brake_on, a0)
         raw.append(
@@ -217,10 +228,31 @@ def detect_events(
     def metres(index: int | None) -> float:
         return float("nan") if index is None else float((index % n) * grid_m)
 
+    # Labels in two passes: every event's own window first, so the fallback can
+    # only take a marker no other event claimed.
+    empty = np.zeros(len(corner_d), dtype=bool)
+    windows = [
+        _wrap_window(corner_d, r["start"] * grid_m - params.label_margin_m,
+                     r["exit_end"] * grid_m + params.label_margin_m, lap_length)
+        if len(corner_d) else empty
+        for r in raw
+    ]
+    if len(corner_d):
+        claimed = np.logical_or.reduce(windows) if windows else empty
+        for k, r in enumerate(raw):
+            if windows[k].any():
+                continue
+            # A flat-out corner has no approach phase, so its window collapses
+            # onto the apex band and misses the marker at the turn-in ahead of
+            # it (F018). Reach back from the band for unclaimed markers only.
+            a0_m = r["a0"] * grid_m
+            near = _wrap_window(corner_d, a0_m - params.fallback_margin_m, a0_m, lap_length) & ~claimed
+            windows[k] = near
+            claimed = claimed | near
+
     rows = []
     for k, (trough, r) in enumerate(zip(troughs, raw)):
-        start_m, end_m = r["start"] * grid_m, r["exit_end"] * grid_m
-        members = _wrap_window(corner_d, start_m - params.label_margin_m, end_m + params.label_margin_m, lap_length) if len(corner_d) else np.zeros(0, dtype=bool)
+        members = windows[k]
         rows.append(
             dict(
                 event_id=k,
