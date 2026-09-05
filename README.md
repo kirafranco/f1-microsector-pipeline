@@ -87,6 +87,8 @@ Spec-driven development state — the feature list, per-feature specs, progress 
 
 - **The pit wall is one Grafana dashboard, provisioned from a file.** Two laps on the shared 10 m grid: a Δt curve with both speed, throttle and brake traces beside it, a micro-sector bar chart showing where the time went, and a corner table carrying each braking point's own uncertainty. Everything is driven by SQL template variables, so any session, driver pair and lap pair in the warehouse can be compared without editing anything; the laps default to each driver's fastest. Two things were measured rather than assumed. Grafana's Trend panel turns out to have no shared crosshair, so the promised hover-across-stacked-panels interaction was rebuilt as a single multi-axis panel. And filtering short micro-sectors out of the loss chart, as the design called for, would have misread the lap: on the target pair the three sectors under 30 m carry −0.104 s against the ranked sectors' +0.184 s, so they are pooled into one trailing bar and the chart now adds up to the lap delta exactly — 0.080742 s against the grid's 0.080742 s.
 
+- **The pipeline runs as two Airflow DAGs.** `f1_session_pipeline` takes one session from the timing feed to the warehouse — availability sensor, ingest, align, resample, segment, measure, validate, quality gate, load — with each task calling the same function the conda environment calls. `f1_calendar_dispatch` reads the season schedule, subtracts what the warehouse already holds, and triggers the rest; a session that failed is simply still missing an hour later, so per-session fault tolerance falls out of asking the question that way rather than tracking failures. Measured on Suzuka 2024 Qualifying: the whole graph runs in 50 seconds and loads the same 42,418 grid rows the manual path produced, and a second run changes no data at all — the snapshot is reused and the session's own partition is truncated before it is rewritten. The sensor exists because FastF1 reports an unpublished session in a way that this project's retry logic reads as permanent, so "the race finished an hour ago" would otherwise be treated as "this will never work".
+
 ## Findings
 
 **Where did 0.066 seconds go? Suzuka 2024, Verstappen vs Pérez** — the write-up itself lives at `docs/findings/2024-suzuka-q3-ver-per.md` and is kept local for now, alongside the decision log and the feature harness, so it will not appear in a clone. What it found is recorded here, which is what survives.
@@ -107,9 +109,11 @@ docker compose --profile core down
 | Profile | Services | Feature |
 |---|---|---|
 | `core` | Postgres 18, Grafana 12 | F001 |
+| `orchestration` | Postgres 18, Airflow 3.3 | F006 |
 | `dev` | Jupyter | F014 |
 | `pipeline` | Spark | F013 |
-| `orchestration` | Airflow | F006 |
+
+Postgres appears in both profiles it is needed by, because Compose does not enable a dependency's profile on its own. `docker compose --profile orchestration up -d --wait` builds the Airflow image on first run and opens the UI at `http://localhost:8080`; the pipeline DAG arrives ready to trigger and the hourly dispatcher arrives paused, so nothing starts ingesting a season because the stack came up.
 
 Everything persists in bind mounts under `data/` (gitignored), so copying the project folder carries the databases with it. Postgres is reachable from the conda environment at `localhost:55432` and Grafana opens at `http://localhost:3000`. `localhost` works on any network or none, because that traffic never leaves the machine. The interface each port is published on is a per-machine setting in `.env` (`*_BIND_ADDRESS`, default `127.0.0.1`, which is `localhost`); set it to `0.0.0.0` only to reach a service from another device on the same Wi-Fi. Grafana connects through a read-only role and its datasource and dashboards are provisioned from files in `servicios/grafana/provisioning/`; the pit-wall dashboard opens at `http://localhost:3000/d/f1-pit-wall` once a session has been loaded, and edits made in the browser are discarded on the next reload because the file on disk is the dashboard. The standards the compose file must obey are asserted by tests that run without Docker; `pytest -m docker` brings the stack up and checks health, permissions, persistence and limits on the real daemon.
 
