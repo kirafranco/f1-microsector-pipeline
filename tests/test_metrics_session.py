@@ -16,10 +16,10 @@ from src.metrics.session import LAP_SUMMARY_SCHEMA, compute_metrics
 from tests import synthetic_session as syn
 
 SUZUKA = {
-    "grid_root": INTERIM_ROOT / "grid" / "2024_Japan_Q_projection",
-    "microsector_root": INTERIM_ROOT / "microsectors" / "2024_Japan_Q_projection",
-    "snapshot_root": DATA_ROOT / "raw" / "fastf1" / "2026-09-01" / "2024_Japan_Q",
-    "aligned_root": INTERIM_ROOT / "aligned" / "2024_Japan_Q_projection",
+    "grid_root": INTERIM_ROOT / "grid" / "2024_Japanese-Grand-Prix_Q_projection",
+    "microsector_root": INTERIM_ROOT / "microsectors" / "2024_Japanese-Grand-Prix_Q_projection",
+    "snapshot_root": DATA_ROOT / "raw" / "fastf1" / "2026-09-05" / "2024_Japanese-Grand-Prix_Q",
+    "aligned_root": INTERIM_ROOT / "aligned" / "2024_Japanese-Grand-Prix_Q_projection",
 }
 SUZUKA_PRESENT = all(
     (SUZUKA[k] / f).exists()
@@ -153,7 +153,7 @@ class TestSuzukaAcceptance:
 
     def test_criterion_6_sector_times_complete(self, suzuka) -> None:
         assert suzuka.report.unflagged_nan_sector_times == 0
-        assert len(suzuka.times) == 74 * 93
+        assert len(suzuka.times) == 74 * 92  # 92 micro-sectors per lap since F015 placed the origin: 57 fixed bins (was 58 / 93)
 
     def test_criterion_7_all_reference_kinds(self, suzuka, tmp_path: Path) -> None:
         best = compute_metrics(**SUZUKA, out_root=tmp_path / "best", reference=ReferenceSpec("driver_best"))

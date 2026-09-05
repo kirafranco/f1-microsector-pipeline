@@ -15,9 +15,9 @@ from src.segment.phases import GRAIN_CORNER_PHASE, GRAIN_FIXED_100M, MICROSECTOR
 from src.segment.session import segment_session
 from tests import synthetic_session as syn
 
-SUZUKA_GRID = INTERIM_ROOT / "grid" / "2024_Japan_Q_projection"
-SUZUKA_ALIGNED = INTERIM_ROOT / "aligned" / "2024_Japan_Q_projection"
-SUZUKA_SNAPSHOT = DATA_ROOT / "raw" / "fastf1" / "2026-09-01" / "2024_Japan_Q"
+SUZUKA_GRID = INTERIM_ROOT / "grid" / "2024_Japanese-Grand-Prix_Q_projection"
+SUZUKA_ALIGNED = INTERIM_ROOT / "aligned" / "2024_Japanese-Grand-Prix_Q_projection"
+SUZUKA_SNAPSHOT = DATA_ROOT / "raw" / "fastf1" / "2026-09-05" / "2024_Japanese-Grand-Prix_Q"
 SUZUKA_PRESENT = all(
     p.exists()
     for p in (SUZUKA_GRID / "grid.parquet", SUZUKA_ALIGNED / "alignment_meta.json", SUZUKA_SNAPSHOT / "circuit_corners.parquet")
@@ -134,7 +134,7 @@ class TestSuzukaAcceptance:
         assert suzuka.report.events_without_corners == 0
 
     def test_criterion_8_fixed_bins(self, suzuka) -> None:
-        assert suzuka.report.fixed_bins == 58 and suzuka.report.fixed_bins_ok
+        assert suzuka.report.fixed_bins == 57 and suzuka.report.fixed_bins_ok  # the placed axis ends under 5,800 m (F015); was 58
 
     def test_criterion_9_deterministic(self, suzuka, tmp_path: Path) -> None:
         again = segment_session(SUZUKA_GRID, SUZUKA_SNAPSHOT, SUZUKA_ALIGNED, out_root=tmp_path / "again")

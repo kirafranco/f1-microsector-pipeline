@@ -15,7 +15,7 @@ from src.grid.resample import GRID_SCHEMA
 from src.grid.session import resample_session
 from tests.test_resample import synthetic_lap
 
-SUZUKA_ALIGNED = INTERIM_ROOT / "aligned" / "2024_Japan_Q_projection"
+SUZUKA_ALIGNED = INTERIM_ROOT / "aligned" / "2024_Japanese-Grand-Prix_Q_projection"
 
 
 @pytest.fixture(scope="module")
