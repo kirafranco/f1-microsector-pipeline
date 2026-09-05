@@ -19,7 +19,7 @@ Post-race F1 telemetry pipeline: FastF1 ingestion → 10 m spatial resampling �
 - FastF1 cache path: `data/cache/fastf1` — enabled before any session load, no exceptions.
 - Raw snapshots: `data/raw/fastf1/<snapshot-date>/`, immutable.
 - Discrete telemetry channels (`nGear`, `Brake`, `DRS`) are never linearly interpolated — step/previous only.
-- **Star schema grain.** `dim_lap` holds the natural key `(season, event, session, driver, lap)` plus a surrogate `lap_id`. `fact_telemetry_grid` is keyed `(lap_id, grid_index)`; `fact_microsector` is keyed `(lap_id, microsector_id)`. Uniqueness validated before every load; loads are idempotent per session partition.
+- **Star schema grain.** `dim_lap` holds the natural key `(season, event, session, driver, lap)` plus a surrogate `lap_id`. `fact_telemetry_grid` is keyed `(lap_id, grid_index)`; `fact_microsector` is keyed `(lap_id, grain, microsector_id)` — `grain` is in the key because micro-sector ids are per grain (F009). Uniqueness validated before every load; loads are idempotent per session partition, by truncating that session's leaf partition rather than deleting rows.
 - **Telemetry column types:** `float4` for continuous channels, `smallint` for gear/DRS, `bool` for brake. `fact_telemetry_grid` is partitioned by season/event.
 - **The maths is engine-agnostic (decision D2).** Per-lap resampling lives as a pure NumPy function in `src/`, unit-testable without a JVM. Spark is the distribution layer only — never the place where interpolation logic is written.
 - **The dashboard is a read-only consumer (decision D1).** No dashboard-specific columns, views, or naming in the schema; it must serve Grafana, Superset, or FastAPI equally.
