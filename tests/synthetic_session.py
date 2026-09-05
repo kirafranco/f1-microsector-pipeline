@@ -153,6 +153,19 @@ LAP_TIME_OFFSET_S = 0.2
 S1_OFFSET_S = 0.1
 #: Session clock at each lap's first sample.
 SESSION_T0 = 1000.0
+#: Identity of the designed session, shaped like a real F002 snapshot's
+#: session_meta.json. Round 1 so it never collides with Suzuka (round 4).
+SESSION_META = {
+    "season": 2024,
+    "event_requested": "Synthetic",
+    "session_requested": "Q",
+    "session_name": "Qualifying",
+    "session_date": "2024-03-02 06:00:00",
+    "event_name": "Synthetic Grand Prix",
+    "country": "Nowhere",
+    "location": "Synthetica",
+    "round_number": 1,
+}
 #: Official circuit length: a little longer than the driven path, as in reality.
 OFFICIAL_LENGTH_M = 3020.0
 
@@ -328,6 +341,7 @@ def write_session(root: Path) -> tuple[Path, Path, Path]:
         path.mkdir(parents=True, exist_ok=True)
     grid().to_parquet(grid_root / "grid.parquet", index=False)
     aligned_telemetry().to_parquet(aligned_root / "telemetry_aligned.parquet", index=False)
+    (snapshot_root / "session_meta.json").write_text(json.dumps(SESSION_META, indent=2), encoding="utf-8")
     raw_corners().to_parquet(snapshot_root / "circuit_corners.parquet", index=False)
     (aligned_root / "alignment_meta.json").write_text(json.dumps(frame_meta()), encoding="utf-8")
     return grid_root, snapshot_root, aligned_root

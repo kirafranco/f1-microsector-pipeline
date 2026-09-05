@@ -83,6 +83,8 @@ Spec-driven development state — the feature list, per-feature specs, progress 
 - **Services:** Postgres, Spark, Airflow, and Grafana run as Docker containers under `servicios/` (bind mounts only, custom bridge network, config via `.env`). Compose profiles are mandatory — the full stack does not fit in laptop RAM at once.
 - **Repo knowledge graph:** [graphify](https://github.com/Graphify-Labs/graphify) is installed as developer tooling (`pipx install graphifyy==0.9.53`) and registered as a project-scoped Claude Code skill under `.claude/`. `graphify update .` rebuilds `graphify-out/` (gitignored) from the code in seconds, locally, with no API key; `/graphify .` inside Claude Code adds the semantic pass over the docs. It is a navigation aid for working on the code, never a pipeline dependency.
 
+- **The warehouse is loaded per session, behind the quality gate.** Six dimensions and three fact grains in PostgreSQL: the grid table serves lap overlays, the micro-sector table serves compound and stint aggregates, and corner metrics sit alongside. Each fact is partitioned by event and then by session, so reloading a session truncates its own leaf rather than deleting rows and a duplicate is impossible by construction. Nothing is written until the quality contracts pass, and the whole session load is one transaction. Measured on Suzuka 2024 Qualifying: 42,418 grid rows loaded in under four seconds, 9 MB on disk, a two-lap overlay query in 3 milliseconds.
+
 ## Running the stack
 
 Services live under `servicios/` and run with Docker Compose, one profile at a time (the full stack does not fit in RAM alongside Windows and Docker Desktop):
