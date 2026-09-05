@@ -1,0 +1,44 @@
+# Build context exclusions (global CLAUDE.md 2.1), for every image in this
+# repository. The context is the project root because the Airflow image has to
+# carry src/ and requirements.txt.
+#
+# Nothing here is a nicety: data/ is tens of gigabytes of telemetry, and .env
+# holds every credential the stack uses. Neither belongs in an image layer.
+
+# Data, caches and model artefacts. Never versioned, never built in.
+data/
+*.parquet
+*.csv
+
+# Credentials. .env.example is versioned and carries placeholders only.
+**/.env
+!**/.env.example
+
+# Local development state that no service needs.
+.venv/
+.conda/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+notebooks/
+
+# Spec-driven development state and generated tooling output, both local-only.
+harness/
+graphify-out/
+docs/
+
+# Version control and editor state.
+.git/
+.gitignore
+.gitattributes
+.github/
+.vscode/
+.idea/
+
+# Tests run in the conda env against the source tree, not inside the image.
+tests/
+
+# Logs.
+*.log
+logs/

@@ -26,7 +26,10 @@ services:
   postgres:
     image: postgres:18.6
     container_name: ${COMPOSE_PROJECT_NAME}-postgres
-    profiles: [core]
+    # In both profiles that need it: Compose does not enable a dependency's
+    # profile on its own, so `--profile orchestration up` would otherwise
+    # refuse to start airflow for want of a database.
+    profiles: [core, orchestration]
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
@@ -101,3 +104,83 @@ services:
         limits:
           memory: 1G
           cpus: "1"
+
+  airflow:
+    # The project's first built image (F006): Airflow plus this pipeline's
+    # dependencies. Context is the project root because it carries src/.
+    build:
+      context: ..
+      dockerfile: servicios/airflow/Dockerfile
+    image: ${COMPOSE_PROJECT_NAME}-airflow:3.3.1
+    container_name: ${COMPOSE_PROJECT_NAME}-airflow
+    profiles: [orchestration]
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Reached by service name on the compose network, never localhost. The
+      # environment wins over servicios/.env in Settings.from_env, so the same
+      # code connects here and from the conda env on the host.
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      # Airflow's own metadata database, on the same instance (D9).
+      AIRFLOW_DB: ${AIRFLOW_DB}
+      # Set here rather than exported by the entrypoint: a variable exported
+      # inside the entrypoint process is invisible to `docker compose exec`,
+      # so the Airflow CLI would quietly fall back to its default SQLite
+      # database and report the schema as unmigrated. Measured 2026-09-05.
+      # The password is a ${VAR} from .env, never a literal.
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${AIRFLOW_DB}
+      AIRFLOW_ADMIN_USER: ${AIRFLOW_ADMIN_USER}
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD}
+      AIRFLOW_STATE_DIR: /opt/airflow/state
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      # New DAGs start active. f1_session_pipeline only runs when it is
+      # triggered, so an active one costs nothing; the hourly dispatcher
+      # opts back out of this in its own definition.
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+      # SimpleAuthManager: the admin comes from .env, and the entrypoint writes
+      # the password file before Airflow can generate one and print it.
+      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: ${AIRFLOW_ADMIN_USER}:admin
+      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: /opt/airflow/state/passwords.json
+      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "false"
+      AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/state/logs
+      AIRFLOW__API__BASE_URL: http://localhost:${AIRFLOW_PORT}
+      AIRFLOW__API__PORT: "8080"
+      # The pipeline is imported from the bind-mounted project, so an edit on
+      # the host is picked up without rebuilding the image.
+      PYTHONPATH: /opt/airflow/project
+      TZ: UTC
+    ports:
+      # Same rule as the other services: loopback unless a machine's own .env
+      # says otherwise. The auth manager here is dev-only, which makes keeping
+      # this on localhost the mitigation rather than a preference.
+      - "${AIRFLOW_BIND_ADDRESS}:${AIRFLOW_PORT}:8080"
+    volumes:
+      # The project, read-only: tasks import src/ and read servicios/.env, and
+      # a scheduled job has no business rewriting the code that defines it.
+      - ../:/opt/airflow/project:ro
+      # data/ mounted writable over the top, because that is what the pipeline
+      # produces: snapshots, interim layers, processed tables and the cache.
+      - ../data:/opt/airflow/project/data
+      - ./airflow/dags:/opt/airflow/dags:ro
+      # Logs, the password file and standalone's own state.
+      - ../data/airflow:/opt/airflow/state
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/api/v2/version > /dev/null"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 90s
+    networks: [f1net]
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "2"

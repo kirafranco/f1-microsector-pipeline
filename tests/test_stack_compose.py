@@ -25,6 +25,15 @@ PROVISIONING = SERVICIOS / "grafana" / "provisioning"
 LIMITS = {
     "postgres": {"memory": "2G", "cpus": "2"},
     "grafana": {"memory": "1G", "cpus": "1"},
+    "airflow": {"memory": "4G", "cpus": "2"},
+}
+
+#: Which profiles each service belongs to (D9). Postgres is in every profile
+#: that needs it, because Compose does not enable a dependency's profile.
+PROFILES = {
+    "postgres": ["core", "orchestration"],
+    "grafana": ["core"],
+    "airflow": ["orchestration"],
 }
 RESTART_POLICIES = {"unless-stopped", "always"}
 VAR_PATTERN = re.compile(r"\$\{([A-Z0-9_]+)\}")
@@ -59,6 +68,7 @@ class TestVolumes:
                 assert isinstance(volume, str), f"{name}: use the short bind syntax"
                 source = volume.split(":", 1)[0]
                 assert source.startswith(("./", "../")), f"{name}: {source!r} is not a relative bind mount"
+                assert not source.startswith("/"), f"{name}: {source!r} is an absolute host path"
 
     def test_service_data_lives_under_the_gitignored_data_directory(self, services: dict) -> None:
         for name, service in services.items():
@@ -67,11 +77,19 @@ class TestVolumes:
             assert data_mounts, f"{name}: no persistent mount under ../data/"
             assert all(s == f"../data/{name}" for s in data_mounts), f"{name}: data mount is not ../data/{name}"
 
-    def test_configuration_mounts_are_read_only(self, services: dict) -> None:
+    def test_code_and_configuration_are_mounted_read_only(self, services: dict) -> None:
+        """A service may write data and its own state, and nothing else.
+
+        The pipeline's data tree (`../data`) is what the DAGs exist to produce,
+        so it is writable; the code and provisioning that define the services
+        are not, because a scheduled job rewriting them is never intended.
+        """
         for name, service in services.items():
             for volume in service.get("volumes", []):
-                if not volume.split(":", 1)[0].startswith("../data/"):
-                    assert volume.endswith(":ro"), f"{name}: {volume!r} should be mounted read-only"
+                source = volume.split(":", 1)[0]
+                if source == "../data" or source.startswith("../data/"):
+                    continue
+                assert volume.endswith(":ro"), f"{name}: {volume!r} should be mounted read-only"
 
 
 class TestImages:
@@ -87,19 +105,44 @@ class TestImages:
         assert services["postgres"]["image"].startswith("postgres:")
         assert services["grafana"]["image"].startswith("grafana/grafana-oss:")
 
-    def test_no_build_context_yet(self, services: dict) -> None:
-        """Unmodified official images need no Dockerfile; the first one brings
-        the .dockerignore obligation with it (F013/F014)."""
+    def test_a_built_service_pins_its_own_base(self, services: dict) -> None:
+        """The tag on a built image names the version it was built from, so
+        `docker images` says what is running without opening the Dockerfile."""
         for name, service in services.items():
-            assert "build" not in service, f"{name}: a build context needs a .dockerignore"
-        assert not (SERVICIOS / ".dockerignore").exists()
+            if "build" not in service:
+                continue
+            dockerfile = PROJECT_ROOT / service["build"]["context"].replace("..", ".") / service["build"]["dockerfile"]
+            resolved = (SERVICIOS / service["build"]["context"] / service["build"]["dockerfile"]).resolve()
+            body = resolved.read_text(encoding="utf-8")
+            (base,) = re.findall(r"^FROM (\S+)", body, re.MULTILINE)
+            assert ":" in base and not base.endswith(":latest"), f"{name}: {base}"
+
+    def test_every_build_context_has_a_dockerignore(self, services: dict) -> None:
+        """Global 2.1: no data and no secret may reach an image layer."""
+        for name, service in services.items():
+            build = service.get("build")
+            if build is None:
+                continue
+            context = (SERVICIOS / build["context"]).resolve()
+            assert (context / ".dockerignore").exists(), \
+                f"{name}: build context {context} has no .dockerignore"
 
 
 class TestProfilesAndNetwork:
-    def test_every_service_is_in_the_core_profile(self, services: dict) -> None:
-        """D9: nothing starts that the task does not need."""
+    def test_every_service_declares_the_profiles_d9_assigned_it(self, services: dict) -> None:
+        """D9: nothing starts that the task does not need. The full stack is
+        ~15 GB and Docker Desktop here has 15.3 GiB."""
+        assert set(services) == set(PROFILES), "a new service needs a profile in D9's table"
         for name, service in services.items():
-            assert service.get("profiles") == ["core"], f"{name}: not in the core profile"
+            assert service.get("profiles") == PROFILES[name], f"{name}: wrong profiles"
+
+    def test_a_dependency_shares_its_dependants_profile(self, services: dict) -> None:
+        """Compose does not enable a dependency's profile on its own: without
+        postgres in `orchestration`, `--profile orchestration up` refuses."""
+        for name, service in services.items():
+            for dependency in service.get("depends_on", {}):
+                shared = set(services[dependency].get("profiles", [])) & set(service["profiles"])
+                assert shared, f"{name} needs {dependency}, which is in no profile they share"
 
     def test_one_custom_bridge_network(self, compose: dict) -> None:
         networks = compose["networks"]
@@ -162,14 +205,19 @@ class TestRuntimePolicy:
             for line in ENV_EXAMPLE.read_text(encoding="utf-8").splitlines()
             if "=" in line and not line.strip().startswith("#")
         }
-        for key in ("POSTGRES_BIND_ADDRESS", "GRAFANA_BIND_ADDRESS"):
+        for key in ("POSTGRES_BIND_ADDRESS", "GRAFANA_BIND_ADDRESS", "AIRFLOW_BIND_ADDRESS"):
             assert values[key] == "127.0.0.1", key
 
 
 class TestCredentials:
-    def test_every_compose_variable_is_documented(self) -> None:
-        """Compose resolves ${VAR} from .env, so every one must be a key there."""
-        used = set(VAR_PATTERN.findall(COMPOSE_PATH.read_text(encoding="utf-8")))
+    def test_every_compose_variable_is_documented(self, compose: dict) -> None:
+        """Compose resolves ${VAR} from .env, so every one must be a key there.
+
+        Scanned over the parsed document rather than the file text: a comment
+        that mentions the ${VAR} syntax is prose, not configuration, and the
+        rule is about what Compose will try to resolve.
+        """
+        used = set(VAR_PATTERN.findall(yaml.safe_dump(compose)))
         missing = used - env_keys(ENV_EXAMPLE)
         assert not missing, f"used in compose but not in .env.example: {sorted(missing)}"
 
@@ -192,9 +240,16 @@ class TestCredentials:
         assert "COMPOSE_PROJECT_NAME" in env_keys(ENV_EXAMPLE)
 
     def test_no_credential_is_written_into_a_versioned_file(self, services: dict) -> None:
-        """Every secret is a ${VAR} reference, resolved at runtime."""
+        """Every secret is a ${VAR} reference, resolved at runtime.
+
+        A `*_FILE` setting names where a secret lives, not the secret, so it is
+        a path and belongs in the compose file like any other path.
+        """
         for name, service in services.items():
             for key, value in service.get("environment", {}).items():
+                if key.endswith("_FILE"):
+                    assert not VAR_PATTERN.search(str(value)) or "PASSWORD" not in key, key
+                    continue
                 if "PASSWORD" in key or "SECRET" in key:
                     assert VAR_PATTERN.fullmatch(str(value)), f"{name}.{key}: not injected from .env"
 
