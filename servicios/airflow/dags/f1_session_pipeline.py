@@ -102,9 +102,15 @@ def f1_session_pipeline():
     def validate(measured: dict, ingested: dict, **context) -> dict:
         return stages.validate(SessionRun.from_params(context["params"]), ingested["snapshot_date"])
 
-    @task()
+    @task(retries=0)
     def quality(validated: dict, ingested: dict, **context) -> dict:
-        """The gate. Failing here means nothing is written to the warehouse."""
+        """The gate. Failing here means nothing is written to the warehouse.
+
+        No retries: a contract failure is a deterministic property of the data
+        that was just written, so a second attempt reaches the same verdict.
+        Retrying cost twelve minutes per failing session during the F015
+        backfill and changed nothing.
+        """
         return stages.quality(SessionRun.from_params(context["params"]), ingested["snapshot_date"])
 
     @task(retries=1)

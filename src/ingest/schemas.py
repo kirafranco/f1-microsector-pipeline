@@ -105,7 +105,12 @@ CAR_TELEMETRY = ArtefactSchema(
         # D4: Brake is an on/off channel, never a pressure.
         "brake": "boolean",
         "rpm": "float32",
-        "n_gear": "Int8",
+        # Int16, not Int8: the feed emits the occasional garbage gear and one
+        # sample of the 2024 Japanese Grand Prix reads 128 -- exactly one past
+        # int8, which crashed the ingest outright (F015). The warehouse column
+        # is already smallint, and F011 tolerates a sliver of impossible gears
+        # rather than the type refusing to carry them.
+        "n_gear": "Int16",
         "drs": "Int8",
         "source": "string",
     },
