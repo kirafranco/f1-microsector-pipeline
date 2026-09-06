@@ -23,3 +23,8 @@ psycopg[binary]==3.3.5
 # Findings figures (F016). Already present as a FastF1 dependency, but this
 # project imports it directly, and an implicit dependency is not a pin.
 matplotlib==3.11.1
+
+# Spark Connect client for the resampling executor (F013). Pure Python, 1.6 MB,
+# no JVM: it drives the server in the spark container and matches its version.
+# The 455 MB pyspark runtime belongs in that image only, never here.
+pyspark-client==4.1.1

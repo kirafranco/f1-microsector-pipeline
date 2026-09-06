@@ -18,7 +18,7 @@ FastF1 API ──► Ingestion (raw parquet snapshots + mandatory FastF1 cache)
                   ▼
           Spatial resampling — per-lap telemetry → 10 m distance grid
           (NumPy per-lap function; linear interp for continuous channels,
-           step interp for discrete; distributed across laps by Spark)
+           step interp for discrete; optionally distributed across laps by Spark)
                   │
                   ▼
           Corner segmentation + delta & micro-sector metrics
@@ -47,7 +47,7 @@ The original brief is kept verbatim in [docs/project-brief.md](docs/project-brie
 **Settled:**
 
 - **Grafana** for the dashboard, for the Trend panel, which plots against a distance x-axis natively. The schema stays dashboard-agnostic so a Superset or FastAPI front end can be added later without migrating anything. This decision was made expecting a dashboard-wide shared crosshair as well, and that turned out not to exist: Grafana's Trend panel has no shared cursor, so a distance axis and a cross-panel crosshair cannot be had together. The pit-wall view carries every channel in one panel instead — see the dashboard paragraph below.
-- **PySpark in local mode** as the distribution layer, chosen deliberately for the engineering experience rather than the data volume, which is modest. The interpolation maths stays a pure NumPy per-lap function, unit-testable without a JVM; Spark distributes it across laps with a grouped-map pandas UDF and batch-writes to Postgres over JDBC.
+- **PySpark in local mode** as the distribution layer, chosen deliberately for the engineering experience rather than the data volume, which is modest — the pandas executor resamples the whole 2024 season in 256 seconds, so Spark is not here for speed and does not claim it. The interpolation maths stays a pure NumPy per-lap function, unit-testable without a JVM; Spark distributes it across laps with a grouped-map pandas UDF against a Spark Connect server, and is proven by producing byte-identical output to the pandas executor on every session. The warehouse is loaded with Postgres `COPY` rather than JDBC: grid facts need a `lap_id` and a Δt the loader and F004 produce downstream of resampling (D2, amended).
 - **Per-project conda environment** for local development; every service containerised, with compose profiles because the full stack does not fit in laptop RAM at once.
 - **Two corrections to the brief, on the data itself:** FastF1's `Brake` channel is boolean, not pressure, so metrics are defined on brake application; and there is no push event at session end, so orchestration polls for availability with backoff.
 
@@ -115,7 +115,7 @@ docker compose --profile core down
 | `dev` | Jupyter | F014 |
 | `pipeline` | Spark | F013 |
 
-Postgres appears in both profiles it is needed by, because Compose does not enable a dependency's profile on its own. `docker compose --profile orchestration up -d --wait` builds the Airflow image on first run and opens the UI at `http://localhost:8080`; the pipeline DAG arrives ready to trigger and the hourly dispatcher arrives paused, so nothing starts ingesting a season because the stack came up.
+Postgres appears in both profiles it is needed by, because Compose does not enable a dependency's profile on its own. `docker compose --profile pipeline up -d spark` starts the Spark Connect server; the resampling stage only uses it when `F1_GRID_EXECUTOR=spark`, and defaults to pandas otherwise, so the profile is needed only while that executor is selected. `docker compose --profile orchestration up -d --wait` builds the Airflow image on first run and opens the UI at `http://localhost:8080`; the pipeline DAG arrives ready to trigger and the hourly dispatcher arrives paused, so nothing starts ingesting a season because the stack came up.
 
 Everything persists in bind mounts under `data/` (gitignored), so copying the project folder carries the databases with it. Postgres is reachable from the conda environment at `localhost:55432` and Grafana opens at `http://localhost:3000`. `localhost` works on any network or none, because that traffic never leaves the machine. The interface each port is published on is a per-machine setting in `.env` (`*_BIND_ADDRESS`, default `127.0.0.1`, which is `localhost`); set it to `0.0.0.0` only to reach a service from another device on the same Wi-Fi. Grafana connects through a read-only role and its datasource and dashboards are provisioned from files in `servicios/grafana/provisioning/`; the pit-wall dashboard opens at `http://localhost:3000/d/f1-pit-wall` once a session has been loaded, and edits made in the browser are discarded on the next reload because the file on disk is the dashboard. The standards the compose file must obey are asserted by tests that run without Docker; `pytest -m docker` brings the stack up and checks health, permissions, persistence and limits on the real daemon.
 

@@ -34,7 +34,14 @@ PROFILES = {
     "postgres": ["core", "orchestration"],
     "grafana": ["core"],
     "airflow": ["orchestration"],
+    "spark": ["pipeline"],
 }
+
+#: Services with no state of their own to keep. Spark is a compute server: its
+#: only writable path is shuffle spill, which D2 puts on a container-internal
+#: directory precisely so it never touches the Windows bind mount. It mounts
+#: `../data` to read the aligned parquet, not to persist anything.
+STATELESS = {"spark"}
 RESTART_POLICIES = {"unless-stopped", "always"}
 VAR_PATTERN = re.compile(r"\$\{([A-Z0-9_]+)\}")
 
@@ -74,8 +81,17 @@ class TestVolumes:
         for name, service in services.items():
             sources = [v.split(":", 1)[0] for v in service.get("volumes", [])]
             data_mounts = [s for s in sources if s.startswith("../data/")]
+            if name in STATELESS:
+                assert not data_mounts, f"{name}: declared stateless but keeps state in ../data/{name}"
+                continue
             assert data_mounts, f"{name}: no persistent mount under ../data/"
             assert all(s == f"../data/{name}" for s in data_mounts), f"{name}: data mount is not ../data/{name}"
+
+    def test_a_stateless_service_still_mounts_data_read_write_only_to_read_it(self, services: dict) -> None:
+        """It has no state, but it does need the interim layers as input."""
+        for name in STATELESS:
+            sources = [v.split(":", 1)[0] for v in services[name].get("volumes", [])]
+            assert "../data" in sources, f"{name}: cannot see the interim layers it resamples"
 
     def test_code_and_configuration_are_mounted_read_only(self, services: dict) -> None:
         """A service may write data and its own state, and nothing else.

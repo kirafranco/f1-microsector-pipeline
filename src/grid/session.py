@@ -36,46 +36,24 @@ class ResampleResult:
         return self.laps_resampled / self.laps_total if self.laps_total else 0.0
 
 
-def resample_session(
+def finish_session(
     aligned_root: Path,
-    out_root: Path | None = None,
-    grid_m: float = GRID_SPACING_M,
+    grids: list[pd.DataFrame],
+    pairs: list[tuple[pd.DataFrame, pd.DataFrame]],
+    rejected: list[dict],
+    laps_total: int,
+    out_root: Path | None,
+    grid_m: float,
+    started: float,
+    executor: str = "pandas",
 ) -> ResampleResult:
-    """Resample every aligned lap in a session and write ``grid.parquet``.
+    """Assemble, validate and write a session's grid, whichever executor produced it.
 
-    A lap that cannot be resampled is recorded in ``rejected_laps.parquet``
-    with its reason and the batch continues. The write is idempotent: the same
-    input produces byte-identical output, and re-running replaces the files.
+    Both executors share this so the output cannot drift between them: the same
+    schema cast, the same duplicate check, the same acceptance measurement and
+    the same three files. F013's equivalence criterion is only meaningful
+    because everything after the per-lap maths is one code path.
     """
-    started = time.perf_counter()
-    telemetry = pd.read_parquet(aligned_root / "telemetry_aligned.parquet")
-
-    grids: list[pd.DataFrame] = []
-    pairs: list[tuple[pd.DataFrame, pd.DataFrame]] = []
-    rejected: list[dict] = []
-    laps_total = 0
-
-    for (driver, lap_number), lap in telemetry.groupby(list(KEY_COLUMNS), observed=True, sort=True):
-        laps_total += 1
-        lap = lap.sort_values("session_time").reset_index(drop=True)
-        lap_started = time.perf_counter()
-        try:
-            grid = resample_lap(lap, grid_m=grid_m)
-        except ResampleError as exc:
-            rejected.append({"driver": driver, "lap_number": lap_number, "reason": str(exc)})
-            logger.warning("lap_rejected driver=%s lap=%s reason=%s", driver, lap_number, exc)
-            continue
-        grids.append(grid)
-        pairs.append((lap, grid))
-        logger.debug(
-            "lap_resampled driver=%s lap=%s source_rows=%d grid_rows=%d ms=%.1f",
-            driver,
-            lap_number,
-            len(lap),
-            len(grid),
-            1000.0 * (time.perf_counter() - lap_started),
-        )
-
     if not grids:
         raise RuntimeError(f"{aligned_root}: no lap resampled ({len(rejected)} rejected)")
 
@@ -95,6 +73,7 @@ def resample_session(
     elapsed = time.perf_counter() - started
     meta = {
         "source": str(aligned_root),
+        "executor": executor,
         "grid_m": grid_m,
         "laps_total": laps_total,
         "laps_resampled": len(grids),
@@ -138,3 +117,48 @@ def resample_session(
         elapsed,
     )
     return result
+
+
+def resample_session(
+    aligned_root: Path,
+    out_root: Path | None = None,
+    grid_m: float = GRID_SPACING_M,
+) -> ResampleResult:
+    """Resample every aligned lap in a session and write ``grid.parquet``.
+
+    A lap that cannot be resampled is recorded in ``rejected_laps.parquet``
+    with its reason and the batch continues. The write is idempotent: the same
+    input produces byte-identical output, and re-running replaces the files.
+    """
+    started = time.perf_counter()
+    telemetry = pd.read_parquet(aligned_root / "telemetry_aligned.parquet")
+
+    grids: list[pd.DataFrame] = []
+    pairs: list[tuple[pd.DataFrame, pd.DataFrame]] = []
+    rejected: list[dict] = []
+    laps_total = 0
+
+    for (driver, lap_number), lap in telemetry.groupby(list(KEY_COLUMNS), observed=True, sort=True):
+        laps_total += 1
+        lap = lap.sort_values("session_time").reset_index(drop=True)
+        lap_started = time.perf_counter()
+        try:
+            grid = resample_lap(lap, grid_m=grid_m)
+        except ResampleError as exc:
+            rejected.append({"driver": driver, "lap_number": lap_number, "reason": str(exc)})
+            logger.warning("lap_rejected driver=%s lap=%s reason=%s", driver, lap_number, exc)
+            continue
+        grids.append(grid)
+        pairs.append((lap, grid))
+        logger.debug(
+            "lap_resampled driver=%s lap=%s source_rows=%d grid_rows=%d ms=%.1f",
+            driver,
+            lap_number,
+            len(lap),
+            len(grid),
+            1000.0 * (time.perf_counter() - lap_started),
+        )
+
+    return finish_session(
+        aligned_root, grids, pairs, rejected, laps_total, out_root, grid_m, started, executor="pandas"
+    )
