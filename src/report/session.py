@@ -61,6 +61,9 @@ class FindingsReport:
     control: dict
     consistency: dict
     reconciliation: dict
+    #: Seconds each lap of the pair took from the timing line to grid 0 (F020).
+    #: The S1 row of the reconciliation is explained by their difference.
+    start_offsets_s: dict
     max_unexplained_s: float
     braking: dict
     dab_event: str
@@ -323,6 +326,8 @@ def build_findings(processed_root: Path, grid_root: Path, microsector_root: Path
                      for index, row in agreement.iterrows()},
         reconciliation={str(index): {key: float(value) for key, value in row.items()}
                         for index, row in reconciliation.iterrows()},
+        start_offsets_s={f"{key[0]} L{key[1]}": float(crosscheck._lap_row(frames["ground_truth"], key, "ground_truth").start_offset_s)
+                         for key in (a, b)},
         max_unexplained_s=float(reconciliation["unexplained_s"].abs().max()),
         braking=braking_report,
         dab_event=dab_event,
