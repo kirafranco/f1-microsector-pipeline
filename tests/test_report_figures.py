@@ -38,7 +38,7 @@ RECONCILIATION = pd.DataFrame({
     "official_gap_s": [0.069, -0.087, 0.084],
     "grid_gap_s": [0.013, -0.068, 0.142],
     "difference_s": [-0.056, 0.019, 0.058],
-    "f010_residual_difference_s": [-0.059, 0.018, 0.061],
+    "explained_s": [-0.059, 0.018, 0.061],
     "unexplained_s": [0.0034, 0.0011, -0.0035],
 }, index=["s1", "s2", "s3"])
 

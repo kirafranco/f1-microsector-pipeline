@@ -55,8 +55,28 @@ def sector_reconciliation(lap_summary: pd.DataFrame, ground_truth: pd.DataFrame,
 
     The grid figures are read off the two laps' time curves at the sector
     boundaries, which is what the micro-sector decomposition implicitly sums to.
-    The last column is what is left once F010's per-lap registration residuals
-    are accounted for; it is the number that has to be small.
+
+    The three rows do not carry the same weight, and F020 is why.
+
+    **S1 is the row with physical content.** Both time curves are zero at grid
+    0, which sits 35-188 m past the timing line, so a grid S1 gap is blind to
+    whatever happened over that stretch. The two laps covered it at different
+    speeds, and the difference of their measured `start_offset_s` -- session
+    time at grid 0 minus the official lap start -- is what the grid cannot see.
+    Subtracting it is a real test: the offsets come from telemetry and the lap
+    starts from the timing feed, so agreement means the two sources agree.
+
+    **S2 and S3 are a consistency check, not an explanation.** Neither involves
+    the timing line, so a sector residual is exactly its grid time minus its
+    official time, and the difference of the two laps' residuals is
+    algebraically equal to the difference row. `identity_check_s` reproducing
+    `difference_s` there confirms that the decomposition and F010's
+    reconstruction read the same clocks; it says nothing about the disagreement
+    itself, which is the registration noise F010 measures per lap.
+
+    Before F020 the S1 residuals still carried the constant-speed extrapolation
+    across that stretch, so S1 also closed by identity and looked like an
+    explanation it was not.
     """
     la, lb = _lap_row(lap_summary, a, "lap_summary"), _lap_row(lap_summary, b, "lap_summary")
     ta, tb = _lap_row(ground_truth, a, "ground_truth"), _lap_row(ground_truth, b, "ground_truth")
@@ -76,8 +96,9 @@ def sector_reconciliation(lap_summary: pd.DataFrame, ground_truth: pd.DataFrame,
 
     official_gap = [float(getattr(lb, f"{name}_official_s") - getattr(la, f"{name}_official_s"))
                     for name in SECTORS]
-    residual_difference = [float(getattr(tb, f"{name}_residual_s") - getattr(ta, f"{name}_residual_s"))
-                           for name in SECTORS]
+    identity_check = [float(getattr(tb, f"{name}_residual_s") - getattr(ta, f"{name}_residual_s"))
+                      for name in SECTORS]
+    start_offset_difference = float(getattr(tb, "start_offset_s") - getattr(ta, "start_offset_s"))
 
     frame = pd.DataFrame({
         "official_gap_s": official_gap,
@@ -85,9 +106,14 @@ def sector_reconciliation(lap_summary: pd.DataFrame, ground_truth: pd.DataFrame,
         "boundary_m": [boundaries[0], boundaries[1], float(shared.max()) * spacing_m],
     }, index=list(SECTORS))
     frame["difference_s"] = frame["grid_gap_s"] - frame["official_gap_s"]
-    frame["f010_residual_difference_s"] = residual_difference
-    frame["unexplained_s"] = frame["difference_s"] - frame["f010_residual_difference_s"]
-    logger.info("sector_reconciliation max_unexplained_s=%.4f", frame["unexplained_s"].abs().max())
+    frame["identity_check_s"] = identity_check
+    # Only S1 straddles the timing line, so only S1 has an offset to account for.
+    frame["start_offset_difference_s"] = [start_offset_difference, float("nan"), float("nan")]
+    explained = [-start_offset_difference, identity_check[1], identity_check[2]]
+    frame["explained_s"] = explained
+    frame["unexplained_s"] = frame["difference_s"] - frame["explained_s"]
+    logger.info("sector_reconciliation start_offset_difference_s=%+.4f max_unexplained_s=%.4f",
+                start_offset_difference, frame["unexplained_s"].abs().max())
     return frame
 
 

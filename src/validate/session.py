@@ -19,7 +19,7 @@ from src.metrics.reference import ReferenceSpec, lap_label, resolve_reference
 from src.segment.validation import Spread
 from src.validate.closure import closure_residuals, reconstruct_laps
 from src.validate.stability import DEFAULT_MIN_LAPS, DEFAULT_PUSH_FRACTION, push_laps, v_min_stability
-from src.validate.timing_line import line_crossings, session_line_positions
+from src.validate.timing_line import line_crossings, session_line_positions, start_stretch
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +59,7 @@ GROUND_TRUTH_COLUMNS = (
     "driven_m", "driven_pct_of_official", "line_start_m", "line_end_m",
     "window_open_s", "window_close_s", "start_extrap_m", "end_extrap_m",
     "start_coverage_poor", "end_coverage_poor", "distance_excursion", "is_reference",
+    "start_offset_s", "start_stretch_s", "start_from_samples",
 )
 
 
@@ -103,6 +104,7 @@ class ValidationReport:
     driven_pct_max: float
     excursions: list[str]
     push_laps: int
+    laps_from_samples: int
     v_min_groups: int
     v_min_std_median_kmh: float
     v_min_std_p95_kmh: float
@@ -219,7 +221,8 @@ def validate_session(
     speeds = grid.pivot_table(index=["driver", "lap_number"], columns="grid_index", values="speed", aggfunc="first")
     speeds.index = curves.index
     ref = resolve_reference(laps, curves.index, reference)
-    reconstructed = reconstruct_laps(curves, speeds, laps, d_start, d_end, s1_m, s2_m, grid_m)
+    stretch = start_stretch(crossings, d_start)
+    reconstructed = reconstruct_laps(curves, speeds, laps, d_start, d_end, s1_m, s2_m, grid_m, start_stretch=stretch)
     reconstructed = closure_residuals(reconstructed, ref)
 
     table = reconstructed.merge(crossings.drop(columns=["start_extrapolated", "end_extrapolated"]),
@@ -277,6 +280,7 @@ def validate_session(
         driven_pct_max=float(gated["driven_pct_of_official"].max()),
         excursions=excursions,
         push_laps=int(len(push_laps(laps, push_fraction))),
+        laps_from_samples=int(table["start_from_samples"].fillna(False).sum()),
         v_min_groups=int(len(stability)),
         v_min_std_median_kmh=float(std_values.median()) if len(std_values) else float("nan"),
         v_min_std_p95_kmh=float(std_values.quantile(0.95)) if len(std_values) else float("nan"),
