@@ -7,6 +7,7 @@ running Grafana and a loaded session lives in test_dashboard_live.py.
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 
@@ -276,3 +277,51 @@ class TestItStaysLoadable:
         for name, sql in dash.all_sql(dashboard):
             used = {ref.lstrip("${") for ref in dash.unresolved(sql)}
             assert used <= declared, f"{name} uses {sorted(used - declared)}"
+
+
+class TestCriterionF023PartitionPruning:
+    """F023: a panel must let Postgres prune to the session it is showing.
+
+    `fact_telemetry_grid` and `fact_microsector` are partitioned by
+    (season, round, session_code). When those values reach the fact table
+    through a join -- `CROSS JOIN s` or `JOIN s ON a.season = s.season` --
+    Postgres knows them neither at plan time nor at runtime, so it scans all 96
+    partitions and discards almost everything: a cold refresh of this dashboard
+    read **259 MB** to render one session. As scalar subqueries they become
+    InitPlans, which runtime pruning does use, and the same refresh reads 3.3 MB.
+
+    This is structural rather than a timing check on purpose, so the pattern
+    cannot return in a new panel without failing offline.
+    """
+
+    PARTITIONED = ("fact_telemetry_grid", "fact_microsector")
+
+    def partitioned_queries(self, dashboard: dict) -> list[tuple[str, str]]:
+        return [(title, sql) for title, sql in dash.all_sql(dashboard)
+                if any(table in sql for table in self.PARTITIONED)]
+
+    def test_some_panels_do_read_the_partitioned_facts(self, dashboard: dict) -> None:
+        """Guards the test below from passing because it found nothing."""
+        assert len(self.partitioned_queries(dashboard)) >= 8
+
+    def test_no_query_takes_a_partition_key_from_a_joined_cte(self, dashboard: dict) -> None:
+        offenders = [title for title, sql in self.partitioned_queries(dashboard)
+                     if "CROSS JOIN s" in sql or re.search(r"\bJOIN\s+s\s+ON\b", sql)]
+        assert offenders == [], f"partition keys arrive through a join, so nothing prunes: {offenders}"
+
+    def test_every_partition_key_comparison_is_against_a_constant_or_a_sibling(self, dashboard: dict) -> None:
+        """`= (SELECT ... FROM dim_session ...)` or `= <alias>.<key>`, never `= s.<key>`."""
+        bad: list[str] = []
+        for title, sql in self.partitioned_queries(dashboard):
+            for key in ("season", "round", "session_code"):
+                for match in re.finditer(rf"\.{key}\s*=\s*(\S+)", sql):
+                    right = match.group(1)
+                    if right.startswith("(SELECT") or re.fullmatch(r"\w+\.\w+", right):
+                        continue
+                    bad.append(f"{title}: .{key} = {right}")
+        assert bad == [], bad
+
+    def test_each_such_query_anchors_on_dim_session(self, dashboard: dict) -> None:
+        """The subquery is what makes the value a constant the planner can use."""
+        for title, sql in self.partitioned_queries(dashboard):
+            assert "FROM dim_session WHERE session_id" in sql, title
