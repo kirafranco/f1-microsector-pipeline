@@ -29,7 +29,7 @@ services:
     # In both profiles that need it: Compose does not enable a dependency's
     # profile on its own, so `--profile orchestration up` would otherwise
     # refuse to start airflow for want of a database.
-    profiles: [core, orchestration]
+    profiles: [core, dev, orchestration]
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
@@ -225,6 +225,55 @@ services:
       retries: 20
       # A cold JVM plus the Connect jars resolving takes a while on first start.
       start_period: 180s
+    networks: [f1net]
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "2"
+
+  # Exploration only (global CLAUDE.md 3.4). Built from python:3.12-slim on the
+  # shared pins rather than a jupyter/* image: see servicios/jupyter/Dockerfile
+  # for why the Docker Hub ones are out of the question (F014).
+  jupyter:
+    build:
+      context: ..
+      dockerfile: servicios/jupyter/Dockerfile
+    image: ${COMPOSE_PROJECT_NAME}-jupyter:4.6.3
+    container_name: ${COMPOSE_PROJECT_NAME}-jupyter
+    profiles: [dev]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # A kernel reads. It connects as the read-only role, like Grafana, so an
+      # exploratory typo cannot reach the warehouse the pipeline owns.
+      JUPYTER_TOKEN: ${JUPYTER_TOKEN}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_READONLY_USER: ${POSTGRES_READONLY_USER}
+      POSTGRES_READONLY_PASSWORD: ${POSTGRES_READONLY_PASSWORD}
+      PYTHONPATH: /opt/project
+      TZ: UTC
+    ports:
+      - "${JUPYTER_BIND_ADDRESS}:${JUPYTER_PORT}:8888"
+    volumes:
+      - ../:/opt/project:ro
+      - ../data:/opt/project/data
+      # notebooks/ is the one versioned path a service may write, because
+      # writing it is what Jupyter is for (F014, decision 2).
+      - ../notebooks:/opt/project/notebooks
+      - ../data/jupyter:/home/jupyter/.jupyter
+    healthcheck:
+      # python rather than curl: the slim base has no curl, and /api answers
+      # without a token, so this probes the server and not the login.
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8888/api', timeout=5)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     networks: [f1net]
     deploy:
       resources:

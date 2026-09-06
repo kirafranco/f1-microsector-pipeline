@@ -26,15 +26,17 @@ LIMITS = {
     "postgres": {"memory": "2G", "cpus": "2"},
     "grafana": {"memory": "1G", "cpus": "1"},
     "airflow": {"memory": "4G", "cpus": "2"},
+    "jupyter": {"memory": "4G", "cpus": "2"},
 }
 
 #: Which profiles each service belongs to (D9). Postgres is in every profile
 #: that needs it, because Compose does not enable a dependency's profile.
 PROFILES = {
-    "postgres": ["core", "orchestration"],
+    "postgres": ["core", "dev", "orchestration"],
     "grafana": ["core"],
     "airflow": ["orchestration"],
     "spark": ["pipeline"],
+    "jupyter": ["dev"],
 }
 
 #: Services with no state of their own to keep. Spark is a compute server: its
@@ -42,6 +44,13 @@ PROFILES = {
 #: directory precisely so it never touches the Windows bind mount. It mounts
 #: `../data` to read the aligned parquet, not to persist anything.
 STATELESS = {"spark"}
+
+#: The one exception to "a service writes data and nothing else": Jupyter has to
+#: write `notebooks/`, because writing notebooks is what it is for. They cannot
+#: move under `data/` -- global CLAUDE.md 3.4 versions them, and `data/` is
+#: gitignored -- so the path is named here per service rather than the rule
+#: being loosened for everyone (F014, decision 2).
+WRITABLE_OWN_STATE = {"jupyter": {"../notebooks"}}
 RESTART_POLICIES = {"unless-stopped", "always"}
 VAR_PATTERN = re.compile(r"\$\{([A-Z0-9_]+)\}")
 
@@ -105,7 +114,22 @@ class TestVolumes:
                 source = volume.split(":", 1)[0]
                 if source == "../data" or source.startswith("../data/"):
                     continue
+                if source in WRITABLE_OWN_STATE.get(name, set()):
+                    continue
                 assert volume.endswith(":ro"), f"{name}: {volume!r} should be mounted read-only"
+
+    def test_the_writable_exceptions_are_declared_per_service(self, services: dict) -> None:
+        """An allowance names one service and one path, and is not a blanket."""
+        for name, sources in WRITABLE_OWN_STATE.items():
+            assert name in services, f"{name} is not a service"
+            mounted = {v.split(":", 1)[0] for v in services[name].get("volumes", [])}
+            assert sources <= mounted, f"{name}: declared writable path it does not mount"
+            for other, service in services.items():
+                if other == name:
+                    continue
+                writable = {v.split(":", 1)[0] for v in service.get("volumes", [])
+                            if not v.endswith(":ro")}
+                assert not (sources & writable), f"{other} also writes {sources & writable}"
 
 
 class TestImages:
