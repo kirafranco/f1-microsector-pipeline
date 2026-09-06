@@ -142,8 +142,8 @@ class TestSuzukaAcceptance:
         assert abs(suzuka.report.lap_residual_median_s) <= 0.03
 
     def test_criterion_2_delta_closure(self, suzuka) -> None:
-        assert suzuka.report.closure.p50 <= mod.CLOSURE_P50_MAX_S
         assert suzuka.report.closure.p95 <= mod.CLOSURE_P95_MAX_S
+        assert abs(suzuka.report.reference_offset_s) <= mod.LAP_P95_MAX_S
 
     def test_criterion_3_sector_times(self, suzuka) -> None:
         for name in ("s1", "s2", "s3"):
@@ -250,3 +250,97 @@ class TestDistanceExcursionRule:
 
     def test_the_measured_season_extremes_are_caught(self) -> None:
         assert mod.distance_excursions(self.series(-5.05, 4.64, -0.44)).tolist() == [True, True, False]
+
+
+class TestF022Ceilings:
+    """The two checks F022 re-formed, on the designed session."""
+
+    def test_the_sector_ceilings_are_the_lap_ceiling(self) -> None:
+        """Derived, not typed: a sector is bounded by two loops exactly as a lap is."""
+        assert set(mod.SECTOR_STD_MAX_S) == {"s1", "s2", "s3"}
+        assert set(mod.SECTOR_STD_MAX_S.values()) == {mod.LAP_STD_MAX_S}
+
+    def test_the_p50_rule_is_gone(self) -> None:
+        assert not hasattr(mod, "CLOSURE_P50_MAX_S")
+
+    def test_a_clean_session_has_no_anomalies(self, synthetic, tmp_path: Path) -> None:
+        report = validate_session(**synthetic, out_root=tmp_path / "clean").report
+        assert report.anomalies == []
+        assert report.anomaly_fraction == 0.0
+        assert report.anomaly_fraction_ok
+
+    def test_the_ground_truth_carries_both_flags(self, synthetic, tmp_path: Path) -> None:
+        truth = validate_session(**synthetic, out_root=tmp_path / "flags").ground_truth
+        for column in ("sector_split_outlier", "lap_outlier"):
+            assert column in truth.columns and not truth[column].any()
+
+    def test_the_reference_offset_is_reported(self, synthetic, tmp_path: Path) -> None:
+        report = validate_session(**synthetic, out_root=tmp_path / "ref").report
+        assert not report.reference_flagged
+        assert np.isfinite(report.reference_offset_s)
+
+    def test_registration_metres_are_reported_for_every_sector(self, synthetic, tmp_path: Path) -> None:
+        """The designed session has essentially no sector spread, so ~0 m is right."""
+        report = validate_session(**synthetic, out_root=tmp_path / "reg").report
+        assert set(report.registration_m) == {"s1", "s2", "s3"}
+        assert all(np.isfinite(v) and v >= 0 for v in report.registration_m.values())
+        assert max(report.registration_m.values()) < 0.01
+
+
+class TestSectorRegistrationMetres:
+    """The conversion itself, where the answer can be worked out by hand."""
+
+    def grid(self, kmh: float, points: int = 300) -> pd.DataFrame:
+        return pd.DataFrame({"grid_index": np.arange(points), "speed": np.full(points, kmh)})
+
+    def test_equal_loop_speeds_give_std_times_v_over_root_two(self) -> None:
+        v_kmh, std = 360.0, 0.10                      # 100 m/s
+        out = mod.sector_registration_m(self.grid(v_kmh), {"s1": std, "s2": std, "s3": std}, 1000.0, 2000.0, 10.0)
+        expected = std * (v_kmh / 3.6) / np.sqrt(2)   # 7.07 m
+        assert all(out[name] == pytest.approx(expected, rel=1e-6) for name in ("s1", "s2", "s3"))
+
+    def test_a_slower_loop_needs_fewer_metres_for_the_same_seconds(self) -> None:
+        """Why Baku and Monaco look worst in seconds: 4 m at 150 km/h is 0.1 s."""
+        fast = mod.sector_registration_m(self.grid(360.0), {"s1": 0.10, "s2": 0.10, "s3": 0.10}, 1000.0, 2000.0, 10.0)
+        slow = mod.sector_registration_m(self.grid(150.0), {"s1": 0.10, "s2": 0.10, "s3": 0.10}, 1000.0, 2000.0, 10.0)
+        assert slow["s2"] < fast["s2"]
+        assert slow["s2"] == pytest.approx(0.10 * (150.0 / 3.6) / np.sqrt(2), rel=1e-6)
+
+    def test_zero_spread_is_zero_metres(self) -> None:
+        out = mod.sector_registration_m(self.grid(300.0), {"s1": 0.0, "s2": 0.0, "s3": 0.0}, 1000.0, 2000.0, 10.0)
+        assert set(out.values()) == {0.0}
+
+    def test_a_stopped_loop_is_not_a_division_by_zero(self) -> None:
+        out = mod.sector_registration_m(self.grid(0.0), {"s1": 0.1, "s2": 0.1, "s3": 0.1}, 1000.0, 2000.0, 10.0)
+        assert all(np.isnan(value) for value in out.values())
+
+
+class TestClosureIsAboutTheReferenceLap:
+    """`closure_ok` on constructed reports, where the reference offset is known."""
+
+    def report(self, **overrides):
+        from dataclasses import replace
+        base = dict(closure_p95=0.10, reference_offset_s=0.0, reference_flagged=False)
+        base.update(overrides)
+
+        class Stub:
+            closure = type("S", (), {"p50": 0.0, "p95": base["closure_p95"]})()
+            reference_offset_s = base["reference_offset_s"]
+            reference_flagged = base["reference_flagged"]
+            closure_ok = mod.ValidationReport.closure_ok
+        return Stub()
+
+    def test_a_centred_reference_passes(self) -> None:
+        assert type(self.report()).closure_ok.fget(self.report())
+
+    def test_a_reference_lap_that_is_itself_an_outlier_fails(self) -> None:
+        stub = self.report(reference_offset_s=mod.LAP_P95_MAX_S + 0.05)
+        assert not type(stub).closure_ok.fget(stub)
+
+    def test_a_wide_spread_still_fails(self) -> None:
+        stub = self.report(closure_p95=mod.CLOSURE_P95_MAX_S + 0.01)
+        assert not type(stub).closure_ok.fget(stub)
+
+    def test_a_flagged_reference_is_not_held_against_the_session(self) -> None:
+        stub = self.report(reference_offset_s=float("nan"), reference_flagged=True)
+        assert type(stub).closure_ok.fget(stub)

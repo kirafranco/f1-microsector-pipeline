@@ -37,11 +37,14 @@ COLUMNS = (
     "s1_median_s", "s2_median_s", "s3_median_s",
     "s1_std_s", "s2_std_s", "s3_std_s",
     "driven_median_m", "driven_std_pct", "official_lap_length_m", "driven_pct_of_official",
-    "excursions", "push_laps",
+    "excursions", "anomalies", "anomaly_fraction", "push_laps",
     "line_start_m", "line_end_m", "line_start_std_m", "line_end_std_m",
     "v_min_std_median_kmh", "v_min_std_p95_kmh",
+    "reference_offset_s", "reference_flagged",
+    "s1_registration_m", "s2_registration_m", "s3_registration_m",
     "lap_reconstruction_ok", "delta_closure_ok", "sector_times_ok",
-    "driven_distance_ok", "v_min_stability_ok", "timing_line_spread_ok", "all_ok",
+    "driven_distance_ok", "v_min_stability_ok", "timing_line_spread_ok",
+    "anomaly_fraction_ok", "all_ok",
 )
 
 
@@ -88,6 +91,8 @@ def _row(path: Path, meta: dict | None) -> dict:
             if driven is not None and official else None
         ),
         "excursions": len(acceptance.get("excursions") or []),
+        "anomalies": len(acceptance.get("anomalies") or []),
+        "anomaly_fraction": acceptance.get("anomaly_fraction"),
         "push_laps": acceptance.get("push_laps"),
         "line_start_m": acceptance.get("line_start_m"),
         "line_end_m": acceptance.get("line_end_m"),
@@ -95,12 +100,16 @@ def _row(path: Path, meta: dict | None) -> dict:
         "line_end_std_m": acceptance.get("line_end_std_m"),
         "v_min_std_median_kmh": acceptance.get("v_min_std_median_kmh"),
         "v_min_std_p95_kmh": acceptance.get("v_min_std_p95_kmh"),
+        "reference_offset_s": acceptance.get("reference_offset_s"),
+        "reference_flagged": acceptance.get("reference_flagged"),
+        **{f"{n}_registration_m": (acceptance.get("registration_m") or {}).get(n) for n in ("s1", "s2", "s3")},
         "lap_reconstruction_ok": checks.get("lap_reconstruction"),
         "delta_closure_ok": checks.get("delta_closure"),
         "sector_times_ok": checks.get("sector_times"),
         "driven_distance_ok": checks.get("driven_distance"),
         "v_min_stability_ok": checks.get("v_min_stability"),
         "timing_line_spread_ok": checks.get("timing_line_spread"),
+        "anomaly_fraction_ok": checks.get("anomaly_fraction"),
         "all_ok": checks.get("all"),
     }
 
