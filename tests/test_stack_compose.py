@@ -27,23 +27,31 @@ LIMITS = {
     "grafana": {"memory": "1G", "cpus": "1"},
     "airflow": {"memory": "4G", "cpus": "2"},
     "jupyter": {"memory": "4G", "cpus": "2"},
+    "pitwall": {"memory": "1G", "cpus": "1"},
 }
 
 #: Which profiles each service belongs to (D9). Postgres is in every profile
 #: that needs it, because Compose does not enable a dependency's profile.
 PROFILES = {
-    "postgres": ["core", "dev", "orchestration"],
+    "postgres": ["core", "dev", "orchestration", "pitwall"],
     "grafana": ["core"],
     "airflow": ["orchestration"],
     "spark": ["pipeline"],
     "jupyter": ["dev"],
+    "pitwall": ["pitwall"],
 }
 
 #: Services with no state of their own to keep. Spark is a compute server: its
 #: only writable path is shuffle spill, which D2 puts on a container-internal
-#: directory precisely so it never touches the Windows bind mount. It mounts
-#: `../data` to read the aligned parquet, not to persist anything.
-STATELESS = {"spark"}
+#: directory precisely so it never touches the Windows bind mount. The pit wall
+#: is a read-only consumer of the warehouse: it holds nothing, writes nothing,
+#: and does not even mount `../data` -- everything it draws comes over the
+#: network from Postgres (F017).
+STATELESS = {"spark", "pitwall"}
+
+#: A stateless service that does not read the data tree either. `spark` mounts
+#: `../data` to read the aligned parquet; the pit wall reads only the warehouse.
+NO_DATA_MOUNT = {"pitwall"}
 
 #: The one exception to "a service writes data and nothing else": Jupyter has to
 #: write `notebooks/`, because writing notebooks is what it is for. They cannot
@@ -98,7 +106,7 @@ class TestVolumes:
 
     def test_a_stateless_service_still_mounts_data_read_write_only_to_read_it(self, services: dict) -> None:
         """It has no state, but it does need the interim layers as input."""
-        for name in STATELESS:
+        for name in STATELESS - NO_DATA_MOUNT:
             sources = [v.split(":", 1)[0] for v in services[name].get("volumes", [])]
             assert "../data" in sources, f"{name}: cannot see the interim layers it resamples"
 

@@ -29,7 +29,7 @@ services:
     # In both profiles that need it: Compose does not enable a dependency's
     # profile on its own, so `--profile orchestration up` would otherwise
     # refuse to start airflow for want of a database.
-    profiles: [core, dev, orchestration]
+    profiles: [core, dev, orchestration, pitwall]
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
@@ -280,3 +280,45 @@ services:
         limits:
           memory: 4G
           cpus: "2"
+
+  # A second read-only consumer of the same star schema, beside Grafana and
+  # never instead of it (D1). It exists for the one interaction Grafana's Trend
+  # panel cannot draw: two laps stacked on one distance axis under a single
+  # crosshair (F017).
+  pitwall:
+    build:
+      context: ..
+      dockerfile: servicios/pitwall/Dockerfile
+    image: ${COMPOSE_PROJECT_NAME}-pitwall:1.0
+    container_name: ${COMPOSE_PROJECT_NAME}-pitwall
+    profiles: [pitwall]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_READONLY_USER: ${POSTGRES_READONLY_USER}
+      POSTGRES_READONLY_PASSWORD: ${POSTGRES_READONLY_PASSWORD}
+      PYTHONPATH: /opt/project
+      TZ: UTC
+    ports:
+      - "${PITWALL_BIND_ADDRESS}:${PITWALL_PORT}:8000"
+    volumes:
+      - ../:/opt/project:ro
+    healthcheck:
+      # python rather than curl: the slim base has no curl. /health touches no
+      # table, so this probes the service and not the warehouse.
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks: [f1net]
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "1"

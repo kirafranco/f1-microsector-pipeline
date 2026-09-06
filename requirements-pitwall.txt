@@ -1,0 +1,23 @@
+# Pit-wall service dependencies (F017) — pinned exactly.
+#
+# Deliberately NOT in requirements.txt: the Airflow, Spark and Jupyter images
+# have no reason to carry a web stack, and requirements.txt is installed by all
+# three. This file is installed by the pitwall image and, through
+# requirements-dev.txt, in the conda env so the offline tests can import them.
+
+-r requirements.txt
+
+# The service. uvicorn runs it; fastapi routes it.
+fastapi==0.141.1
+uvicorn==0.52.4
+
+# The figure. Plotly ships its own plotly.min.js, which the service serves
+# itself — no CDN, so the pit wall works with no internet (global 4.0: a
+# source provides data, never executable code fetched at runtime).
+plotly==7.0.0
+
+# A pooled connection. Measured on the prototype: a fresh connection costs
+# 22 ms to open and 82 ms for the overlay's first execution, while the same
+# three queries on a reused connection take 11 ms — psycopg prepares a
+# statement after its fifth execution and the plan is then cached.
+psycopg-pool==3.3.1
