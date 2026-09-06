@@ -152,7 +152,7 @@ class TestSuzukaAcceptance:
 
     def test_criterion_4_driven_distance(self, suzuka) -> None:
         assert suzuka.report.distance_ok
-        assert suzuka.report.driven_std_m <= mod.DISTANCE_STD_MAX_M
+        assert suzuka.report.driven_std_pct <= mod.DISTANCE_STD_MAX_PCT
 
     def test_criterion_5_v_min_stability(self, suzuka) -> None:
         assert suzuka.report.v_min_groups >= 100
@@ -177,3 +177,76 @@ class TestSuzukaAcceptance:
 
     def test_everything_passes(self, suzuka) -> None:
         assert suzuka.report.ok
+
+
+class TestDistanceExcursions:
+    """F019: a lap that drove somewhere else is reported and excluded, not gated on."""
+
+    @staticmethod
+    def report(synthetic, out: Path, *, alter=None):
+        """Validate the designed session, optionally after moving one lap's distance."""
+        if alter is None:
+            return validate_session(**synthetic, out_root=out).report
+        aligned = out / "aligned"
+        aligned.mkdir(parents=True, exist_ok=True)
+        for name in ("telemetry_aligned.parquet", "alignment_meta.json"):
+            (aligned / name).write_bytes((synthetic["aligned_root"] / name).read_bytes())
+        meta = json.loads((aligned / "alignment_meta.json").read_text(encoding="utf-8"))
+        meta["official_lap_length_m"] = alter
+        (aligned / "alignment_meta.json").write_text(json.dumps(meta), encoding="utf-8")
+        return validate_session(**{**synthetic, "aligned_root": aligned}, out_root=out / "o").report
+
+    def test_a_clean_session_has_no_excursions(self, synthetic, tmp_path: Path) -> None:
+        report = self.report(synthetic, tmp_path / "clean")
+        assert report.excursions == []
+        assert report.distance_ok
+
+    def test_the_spread_rule_is_a_fraction_of_lap_length(self, synthetic, tmp_path: Path) -> None:
+        """The same metres of spread pass on a long circuit and fail on a short one."""
+        report = self.report(synthetic, tmp_path / "clean")
+        assert report.driven_std_pct == pytest.approx(
+            100.0 * report.driven_std_m / syn.OFFICIAL_LENGTH_M, rel=1e-6
+        )
+
+    def test_the_ground_truth_carries_the_flag(self, synthetic, tmp_path: Path) -> None:
+        result = validate_session(**synthetic, out_root=tmp_path / "flagged")
+        assert "distance_excursion" in result.ground_truth.columns
+        assert not result.ground_truth["distance_excursion"].any()
+
+    def test_the_report_counts_push_laps(self, synthetic, tmp_path: Path) -> None:
+        report = self.report(synthetic, tmp_path / "push")
+        assert 0 < report.push_laps <= report.laps
+
+    def test_out_of_band_laps_are_named_with_their_percentage(self, synthetic, tmp_path: Path) -> None:
+        """Shortening the official length pushes every lap above the +0.2 % edge.
+
+        The designed session's four laps drive within a centimetre of each
+        other, so it can only put all of them in the band or none. That the
+        excluded laps are actually left out of the statistics is checked on the
+        real season, where Silverstone R has exactly one excursion in 850 laps.
+        """
+        report = self.report(synthetic, tmp_path / "short", alter=syn.OFFICIAL_LENGTH_M * 0.9)
+        assert len(report.excursions) == report.laps
+        assert all("%" in entry and " L" in entry for entry in report.excursions)
+
+
+class TestDistanceExcursionRule:
+    """The band rule itself, where a partial split can be constructed."""
+
+    def series(self, *values: float) -> pd.Series:
+        return pd.Series(list(values), dtype="float64")
+
+    def test_only_the_laps_outside_the_band_are_marked(self) -> None:
+        low, high = mod.OFFICIAL_LENGTH_BAND_PCT
+        flags = mod.distance_excursions(self.series(0.0, low - 0.01, high + 0.01, high - 0.01, low + 0.01))
+        assert flags.tolist() == [False, True, True, False, False]
+
+    def test_the_edges_are_inside(self) -> None:
+        low, high = mod.OFFICIAL_LENGTH_BAND_PCT
+        assert mod.distance_excursions(self.series(low, high)).tolist() == [False, False]
+
+    def test_a_lap_with_no_distance_is_not_an_excursion(self) -> None:
+        assert mod.distance_excursions(self.series(np.nan, 0.0)).tolist() == [False, False]
+
+    def test_the_measured_season_extremes_are_caught(self) -> None:
+        assert mod.distance_excursions(self.series(-5.05, 4.64, -0.44)).tolist() == [True, True, False]

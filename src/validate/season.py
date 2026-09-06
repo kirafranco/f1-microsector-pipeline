@@ -36,7 +36,8 @@ COLUMNS = (
     "closure_p50_s", "closure_p95_s",
     "s1_median_s", "s2_median_s", "s3_median_s",
     "s1_std_s", "s2_std_s", "s3_std_s",
-    "driven_median_m", "official_lap_length_m", "driven_pct_of_official",
+    "driven_median_m", "driven_std_pct", "official_lap_length_m", "driven_pct_of_official",
+    "excursions", "push_laps",
     "line_start_m", "line_end_m", "line_start_std_m", "line_end_std_m",
     "v_min_std_median_kmh", "v_min_std_p95_kmh",
     "lap_reconstruction_ok", "delta_closure_ok", "sector_times_ok",
@@ -80,11 +81,14 @@ def _row(path: Path, meta: dict | None) -> dict:
         "s2_std_s": sectors_std.get("s2"),
         "s3_std_s": sectors_std.get("s3"),
         "driven_median_m": driven,
+        "driven_std_pct": acceptance.get("driven_std_pct"),
         "official_lap_length_m": official,
         "driven_pct_of_official": (
             (driven - official) / official * 100.0
             if driven is not None and official else None
         ),
+        "excursions": len(acceptance.get("excursions") or []),
+        "push_laps": acceptance.get("push_laps"),
         "line_start_m": acceptance.get("line_start_m"),
         "line_end_m": acceptance.get("line_end_m"),
         "line_start_std_m": acceptance.get("line_start_std_m"),

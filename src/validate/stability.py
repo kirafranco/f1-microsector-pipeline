@@ -22,19 +22,50 @@ STABILITY_SCHEMA: dict[str, str] = {
 
 DEFAULT_MIN_LAPS = 3
 
+#: A lap counts as representative when its time is within this factor of the
+#: driver's own best in the session (F019). FastF1's ``is_accurate``, which the
+#: pipeline already applies upstream, drops out-laps and pit laps but *keeps* a
+#: qualifying cool-down lap: complete, timed and green-flag, yet tens of km/h
+#: slower through every corner. Leaving those in the group measures the run
+#: plan rather than the driver's repeatability -- Lusail Q read a V_min spread
+#: of 52.9 km/h at p95 on every accurate lap and 5.7 on push laps alone.
+DEFAULT_PUSH_FRACTION = 1.07
+
+
+def push_laps(laps: pd.DataFrame, push_fraction: float = DEFAULT_PUSH_FRACTION) -> pd.DataFrame:
+    """The laps within ``push_fraction`` of each driver's own best in the session.
+
+    A lap with no time cannot be judged and is dropped, as it is by every other
+    consumer of the lap table.
+    """
+    if "lap_time" not in laps.columns:
+        raise ValueError(
+            "laps frame has no 'lap_time' column, so push laps cannot be identified; "
+            "pass the session lap table, not a subset"
+        )
+    timed = laps[laps["lap_time"].notna()]
+    if timed.empty:
+        return timed
+    best = timed.groupby("driver")["lap_time"].transform("min")
+    return timed[timed["lap_time"] <= push_fraction * best]
+
 
 def v_min_stability(
-    corner_metrics: pd.DataFrame, laps: pd.DataFrame, min_laps: int = DEFAULT_MIN_LAPS
+    corner_metrics: pd.DataFrame,
+    laps: pd.DataFrame,
+    min_laps: int = DEFAULT_MIN_LAPS,
+    push_fraction: float = DEFAULT_PUSH_FRACTION,
 ) -> pd.DataFrame:
-    """One row per ``(driver, compound, event)`` with at least ``min_laps`` laps."""
-    tyres = laps[["driver", "lap_number", "compound"]].copy()
+    """One row per ``(driver, compound, event)`` with at least ``min_laps`` push laps."""
+    selected = push_laps(laps, push_fraction)
+    tyres = selected[["driver", "lap_number", "compound"]].copy()
     tyres["driver"] = tyres["driver"].astype(str)
     tyres["lap_number"] = tyres["lap_number"].astype(int)
 
     metrics = corner_metrics.copy()
     metrics["driver"] = metrics["driver"].astype(str)
     metrics["lap_number"] = metrics["lap_number"].astype(int)
-    joined = metrics.merge(tyres, on=["driver", "lap_number"], how="left")
+    joined = metrics.merge(tyres, on=["driver", "lap_number"], how="inner")
 
     grouped = joined.groupby(["driver", "compound", "event_id"], observed=True, dropna=False)
     out = grouped.agg(

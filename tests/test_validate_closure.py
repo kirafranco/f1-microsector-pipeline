@@ -121,7 +121,8 @@ class TestStability:
             }
         )
         laps = pd.DataFrame(
-            {"driver": ["AAA"] * 4 + ["BBB"] * 2, "lap_number": [1, 2, 3, 4, 1, 2], "compound": ["SOFT"] * 6}
+            {"driver": ["AAA"] * 4 + ["BBB"] * 2, "lap_number": [1, 2, 3, 4, 1, 2], "compound": ["SOFT"] * 6,
+             "lap_time": [90.0] * 6}  # all within 107 % of each driver's best: every lap is a push lap
         )
         out = v_min_stability(metrics, laps, min_laps=3)
         assert out["driver"].tolist() == ["AAA"]
@@ -137,7 +138,8 @@ class TestStability:
             }
         )
         laps = pd.DataFrame(
-            {"driver": ["AAA"] * 6, "lap_number": [1, 2, 3, 4, 5, 6], "compound": ["SOFT"] * 3 + ["HARD"] * 3}
+            {"driver": ["AAA"] * 6, "lap_number": [1, 2, 3, 4, 5, 6], "compound": ["SOFT"] * 3 + ["HARD"] * 3,
+             "lap_time": [90.0] * 6}
         )
         out = v_min_stability(metrics, laps, min_laps=3)
         assert sorted(out["compound"].tolist()) == ["HARD", "SOFT"]
