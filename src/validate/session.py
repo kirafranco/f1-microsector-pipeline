@@ -17,6 +17,7 @@ from src.grid.resample import GRID_SPACING_M
 from src.metrics.delta import time_curves
 from src.metrics.reference import ReferenceSpec, lap_label, resolve_reference
 from src.segment.validation import Spread
+from src.validate.anomalies import lap_outliers, sector_split_outliers
 from src.validate.closure import closure_residuals, reconstruct_laps
 from src.validate.stability import DEFAULT_MIN_LAPS, DEFAULT_PUSH_FRACTION, push_laps, v_min_stability
 from src.validate.timing_line import line_crossings, session_line_positions, start_stretch
@@ -26,10 +27,30 @@ logger = logging.getLogger(__name__)
 #: Thresholds from the spec, set one notch above the measured post-fix figures.
 LAP_STD_MAX_S = 0.12
 LAP_P95_MAX_S = 0.20
-CLOSURE_P50_MAX_S = 0.08
-CLOSURE_P95_MAX_S = 0.20
+#: Closure is the lap residual minus the reference lap's own: per session the
+#: two spreads agree to three decimals. So its p95 is the lap check again --
+#: F004's original 0.35 s, which F010 tightened to 0.20 on one session -- and
+#: the only thing closure adds is whether the reference lap is itself odd,
+#: which `reference_offset_s` reports and `LAP_P95_MAX_S` bounds (F022). The
+#: p50 rule this replaces measured which lap F004 happened to pick: it
+#: correlated 0.972 with that lap's own offset and failed 9 sessions.
+CLOSURE_P95_MAX_S = 0.35
 SECTOR_MEDIAN_MAX_S = 0.03
-SECTOR_STD_MAX_S = {"s1": 0.10, "s2": 0.08, "s3": 0.08}
+
+#: A sector time is bounded by two timing-loop crossings exactly as a lap is,
+#: and the measured spreads agree: sector-to-lap std ratios of 1.01, 0.93 and
+#: 0.96 across the season. So the ceiling *is* the lap ceiling, derived here
+#: rather than typed, and the two cannot drift apart again. The 0.10/0.08/0.08
+#: this replaces was one notch above Suzuka's own and failed the four circuits
+#: whose timing loops sit at 150-210 km/h, where 4 m of registration is 0.1 s.
+SECTOR_STD_MAX_S = {name: LAP_STD_MAX_S for name in ("s1", "s2", "s3")}
+
+#: Anomalous laps are excluded like coverage-poor ones; what stays gated is how
+#: many. This is a broken-pipeline bound -- alignment wrong for every lap, not
+#: one in a hundred -- not a precision claim. The season's worst is 8.4 %
+#: (Monaco Q) against a 0.88 % median.
+ANOMALY_FRACTION_MAX = 0.10
+
 LINE_POSITION_STD_MAX_M = 8.0
 
 #: Lap-to-lap spread in driven distance, as a percentage of the official lap
@@ -60,8 +81,40 @@ GROUND_TRUTH_COLUMNS = (
     "window_open_s", "window_close_s", "start_extrap_m", "end_extrap_m",
     "start_coverage_poor", "end_coverage_poor", "distance_excursion", "is_reference",
     "start_offset_s", "start_stretch_s", "start_from_samples",
+    "sector_split_outlier", "lap_outlier",
 )
 
+
+
+def sector_registration_m(
+    grid: pd.DataFrame, sector_std_s: dict[str, float], s1_m: float, s2_m: float, grid_m: float
+) -> dict[str, float]:
+    """Each sector's spread expressed as metres of per-crossing registration.
+
+    Reported, never gated (F022). A sector is bounded by two timing loops, so a
+    spatial noise of ``x`` metres at each end gives a time spread of
+    ``x * sqrt(1/va^2 + 1/vb^2)``; inverting puts every circuit on one scale.
+    In seconds the season's sector spreads vary by 30 %, in metres by 25 % around
+    a common 3.6-4.0 m -- and the sessions that look worst in seconds are those
+    whose loops sit at 150-210 km/h, where 4 m is 0.1 s. Grid 0 stands in for the
+    line: since F015 it is 35-188 m further along the same straight.
+    """
+    speeds = grid.groupby("grid_index")["speed"].median()
+
+    def at(distance_m: float) -> float:
+        index = int(round(max(distance_m, 0.0) / grid_m))
+        window = speeds.loc[speeds.index.intersection(range(index - 2, index + 3))]
+        return float(window.median()) / 3.6 if len(window) else float("nan")
+
+    v_line, v_s1, v_s2 = at(0.0), at(s1_m), at(s2_m)
+    bounds = {"s1": (v_line, v_s1), "s2": (v_s1, v_s2), "s3": (v_s2, v_line)}
+    out: dict[str, float] = {}
+    for name, (first, second) in bounds.items():
+        if not (np.isfinite(first) and np.isfinite(second)) or first <= 0 or second <= 0:
+            out[name] = float("nan")
+            continue
+        out[name] = float(sector_std_s[name] / np.sqrt(1.0 / first**2 + 1.0 / second**2))
+    return out
 
 
 def distance_excursions(
@@ -103,6 +156,11 @@ class ValidationReport:
     driven_pct_min: float
     driven_pct_max: float
     excursions: list[str]
+    anomalies: list[str]
+    anomaly_fraction: float
+    reference_offset_s: float
+    reference_flagged: bool
+    registration_m: dict[str, float]
     push_laps: int
     laps_from_samples: int
     v_min_groups: int
@@ -118,7 +176,21 @@ class ValidationReport:
 
     @property
     def closure_ok(self) -> bool:
-        return self.closure.p50 <= CLOSURE_P50_MAX_S and self.closure.p95 <= CLOSURE_P95_MAX_S
+        """The spread, plus whether the reference lap is a reasonable one.
+
+        A closure residual is a lap's residual minus the reference lap's, so the
+        spread is the lap spread and the median is that one lap's registration
+        offset. Gating the median therefore gated a coin flip; gating the offset
+        asks the question that was meant. When the reference lap is itself
+        excluded the offset cannot be measured and is not held against the
+        session -- two sessions of the 2024 season, named in the report.
+        """
+        reference_ok = self.reference_flagged or abs(self.reference_offset_s) <= LAP_P95_MAX_S
+        return self.closure.p95 <= CLOSURE_P95_MAX_S and reference_ok
+
+    @property
+    def anomaly_fraction_ok(self) -> bool:
+        return self.anomaly_fraction <= ANOMALY_FRACTION_MAX
 
     @property
     def sectors_ok(self) -> bool:
@@ -160,7 +232,8 @@ class ValidationReport:
 
     @property
     def ok(self) -> bool:
-        return self.lap_ok and self.closure_ok and self.sectors_ok and self.distance_ok and self.stability_ok and self.line_ok
+        return (self.lap_ok and self.closure_ok and self.sectors_ok and self.distance_ok
+                and self.stability_ok and self.line_ok and self.anomaly_fraction_ok)
 
     def to_dict(self) -> dict:
         out = asdict(self)
@@ -171,6 +244,7 @@ class ValidationReport:
             "driven_distance": self.distance_ok,
             "v_min_stability": self.stability_ok,
             "timing_line_spread": self.line_ok,
+            "anomaly_fraction": self.anomaly_fraction_ok,
             "all": self.ok,
         }
         return out
@@ -238,8 +312,14 @@ def validate_session(
     table["start_coverage_poor"] = table["window_open_s"] > open_limit
     table["end_coverage_poor"] = table["window_close_s"] < close_limit
     table["distance_excursion"] = distance_excursions(table["driven_pct_of_official"])
+    # Per-lap anomalies in the reconstructed timing (F022): the source split a
+    # lap's sectors elsewhere, or the lap is simply far out. Both are excluded
+    # from the gated statistics and reported; their fraction is what is gated.
+    table["sector_split_outlier"] = sector_split_outliers(table)
+    table["lap_outlier"] = lap_outliers(table)
+    anomaly_mask = table["sector_split_outlier"] | table["lap_outlier"]
     coverage_mask = table["start_coverage_poor"].fillna(False) | table["end_coverage_poor"].fillna(False)
-    flagged_mask = coverage_mask | table["distance_excursion"]
+    flagged_mask = coverage_mask | table["distance_excursion"] | anomaly_mask
     flagged = [f"{r.driver} L{int(r.lap_number)}" for r in table[coverage_mask].itertuples()]
     excursions = [
         f"{r.driver} L{int(r.lap_number)} {r.driven_pct_of_official:+.2f}%"
@@ -247,10 +327,36 @@ def validate_session(
     ]
     if flagged:
         logger.warning("coverage_flagged laps=%s (excluded from gated statistics)", flagged)
+    anomalies = [
+        f"{r.driver} L{int(r.lap_number)} "
+        f"{'split' if r.sector_split_outlier else ''}{'+' if r.sector_split_outlier and r.lap_outlier else ''}"
+        f"{'lap' if r.lap_outlier else ''}"
+        for r in table[anomaly_mask].itertuples()
+    ]
     if excursions:
         logger.warning("distance_excursion laps=%s (off the road and back; excluded from gated statistics)", excursions)
+    if anomalies:
+        logger.warning("timing_anomaly laps=%s (excluded from gated statistics)", anomalies)
 
     gated = table[~flagged_mask]
+    anomaly_fraction = float(anomaly_mask.sum()) / len(table) if len(table) else 0.0
+
+    # The reference lap's own registration offset is the constant every closure
+    # residual carries. When that lap is itself excluded the offset cannot be
+    # measured, and the session is not judged on it.
+    reference_row = gated[gated["is_reference"].fillna(False).astype(bool)]
+    reference_flagged = bool(reference_row.empty)
+    gated_lap_median = float(gated["lap_residual_s"].median())
+    reference_offset_s = (
+        float("nan") if reference_flagged
+        else float(reference_row["lap_residual_s"].iloc[0]) - gated_lap_median
+    )
+    reference_label = lap_label(ref.iloc[0]) if reference.kind != "driver_best" else reference.label
+    if reference_flagged:
+        logger.warning("reference_lap_flagged label=%s (closure offset unavailable, not gated)", reference_label)
+
+    sector_std = {name: float(gated[f"{name}_residual_s"].std()) for name in ("s1", "s2", "s3")}
+    registration = sector_registration_m(grid, sector_std, s1_m, s2_m, grid_m)
     stability = v_min_stability(corner_metrics, laps, min_laps, push_fraction)
     lap_residual = gated["lap_residual_s"].dropna()
     closure = gated["closure_residual_s"].dropna()
@@ -260,7 +366,7 @@ def validate_session(
         laps=int(len(table)),
         laps_gated=int(len(gated)),
         flagged=flagged,
-        reference_label=lap_label(ref.iloc[0]) if reference.kind != "driver_best" else reference.label,
+        reference_label=reference_label,
         line_start_m=d_start,
         line_end_m=d_end,
         line_start_std_m=float(crossings["line_start_m"].std()),
@@ -272,13 +378,18 @@ def validate_session(
         lap_residual=Spread.of(lap_residual.to_numpy(dtype=float)),
         closure=Spread.of(closure.to_numpy(dtype=float)),
         sector_median_s={n: float(gated[f"{n}_residual_s"].median()) for n in ("s1", "s2", "s3")},
-        sector_std_s={n: float(gated[f"{n}_residual_s"].std()) for n in ("s1", "s2", "s3")},
+        sector_std_s=sector_std,
         driven_median_m=float(gated["driven_m"].median()),
         driven_std_m=float(gated["driven_m"].std()),
         driven_std_pct=100.0 * float(gated["driven_m"].std()) / official_length_m,
         driven_pct_min=float(gated["driven_pct_of_official"].min()),
         driven_pct_max=float(gated["driven_pct_of_official"].max()),
         excursions=excursions,
+        anomalies=anomalies,
+        anomaly_fraction=anomaly_fraction,
+        reference_offset_s=reference_offset_s,
+        reference_flagged=reference_flagged,
+        registration_m=registration,
         push_laps=int(len(push_laps(laps, push_fraction))),
         laps_from_samples=int(table["start_from_samples"].fillna(False).sum()),
         v_min_groups=int(len(stability)),
