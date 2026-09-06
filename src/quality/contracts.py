@@ -91,10 +91,19 @@ CONTRACTS: dict[str, TableContract] = {
             # 20-600 s is the unit envelope: it catches a lap time in minutes
             # (1.47) or milliseconds (88197), without asserting how long a
             # circuit is. Suzuka runs 88 s, Monaco 70; a test fixture may be shorter.
-            Range(column="lap_time", low=20.0, high=600.0),
-            Range(column="sector1_time", low=10.0, high=200.0),
-            Range(column="sector2_time", low=10.0, high=200.0),
-            Range(column="sector3_time", low=10.0, high=200.0),
+            #
+            # Judged on accurate laps only (F021), the same exemption the
+            # not-null rules above already carry. Lap 1 of the red-flagged 2024
+            # Monaco Grand Prix reports 2,456-2,526 s for 16 drivers: real laps
+            # spanning a 41-minute stoppage, in the right unit, marked
+            # is_accurate=False, and dropped before the grid. Across the season
+            # they are the only breach of any envelope here and not one of them
+            # is an accurate lap; the longest accurate lap is 149.6 s, so the
+            # ceiling stays four-fold for every lap that is judged.
+            Range(column="lap_time", low=20.0, high=600.0, unless=p.lap_not_accurate),
+            Range(column="sector1_time", low=10.0, high=200.0, unless=p.lap_not_accurate),
+            Range(column="sector2_time", low=10.0, high=200.0, unless=p.lap_not_accurate),
+            Range(column="sector3_time", low=10.0, high=200.0, unless=p.lap_not_accurate),
             Range(column="stint", low=1, high=50),
             Range(column="tyre_life", low=0, high=200),
         ],

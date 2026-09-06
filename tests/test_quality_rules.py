@@ -147,6 +147,54 @@ class TestRangeAndAllowedValues:
         assert not AllowedValues(column="gear", values=(4, 5, 6, 7)).violations(f, {}).iloc[0]
 
 
+class TestRangeUnless:
+    """F021: a bound that does not apply to every row.
+
+    Lap 1 of the red-flagged 2024 Monaco Grand Prix reports 41 minutes for 16
+    drivers -- real laps in the right unit, marked inaccurate, never resampled.
+    The envelope exists to catch a unit error, so it is judged on the rows that
+    carry meaningful timing.
+    """
+
+    def test_the_exempt_row_is_not_judged(self) -> None:
+        rule = Range(column="speed", low=0.0, high=1.0, unless=permitted)
+        # every row is outside [0, 1]; only the exempt one is spared
+        assert rule.violations(frame(), {}).tolist() == [True, True, False, True, True]
+
+    def test_it_names_the_reason(self) -> None:
+        assert Range(column="speed", low=0.0, high=1.0, unless=permitted).label == (
+            "Range[0.0, 1.0] unless permitted"
+        )
+
+    def test_without_it_the_rule_is_unchanged(self) -> None:
+        plain = Range(column="speed", low=0.0, high=1.0)
+        assert plain.label == "Range[0.0, 1.0]"
+        assert plain.violations(frame(), {}).tolist() == [True, True, False, True, True]
+
+    def test_it_does_not_spare_a_breach_elsewhere(self) -> None:
+        f = frame()
+        f.loc[0, "speed"] = 9999.0  # a row where 'ok' is True
+        assert Range(column="speed", low=0.0, high=1000.0, unless=permitted).violations(f, {}).tolist() == [
+            True, False, False, False, False
+        ]
+
+    def test_it_composes_with_max_fraction_in_the_notnull_order(self) -> None:
+        """The exemption is applied first, so the fraction is of what remains."""
+        f = frame()
+        f.loc[0, "speed"] = 9999.0
+        rule = Range(column="speed", low=0.0, high=1000.0, unless=permitted, max_fraction=0.25)
+        assert not rule.violations(f, {}).any()          # 1 of 5 rows is inside the tolerance
+        tight = Range(column="speed", low=0.0, high=1000.0, unless=permitted, max_fraction=0.1)
+        assert tight.violations(f, {}).sum() == 1
+
+    def test_an_exempt_row_alone_does_not_consume_the_tolerance(self) -> None:
+        f = frame()
+        f.loc[2, "speed"] = 9999.0   # the exempt row, out of bounds
+        f.loc[0, "speed"] = 9999.0   # and one that is not
+        rule = Range(column="speed", low=0.0, high=1000.0, unless=permitted, max_fraction=0.1)
+        assert rule.violations(f, {}).sum() == 1
+
+
 class TestInvariant:
     def test_named_check_and_label(self) -> None:
         def speed_exceeds_forty_times_gear(f, parents):

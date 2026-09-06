@@ -213,11 +213,13 @@ class Range(Rule):
     column: str = ""
     low: float = -np.inf
     high: float = np.inf
+    unless: Predicate | None = None
     max_fraction: float = 0.0
 
     @property
     def label(self) -> str:
-        return f"Range[{self.low}, {self.high}]"
+        suffix = f" unless {self.unless.__name__}" if self.unless is not None else ""
+        return f"Range[{self.low}, {self.high}]{suffix}"
 
     @property
     def columns(self) -> tuple[str, ...]:
@@ -227,6 +229,11 @@ class Range(Rule):
         _require_columns(frame, [self.column])
         values = pd.to_numeric(frame[self.column], errors="coerce")
         outside = ((values < self.low) | (values > self.high)).fillna(False).astype(bool)
+        # ``unless`` names rows the bound does not apply to -- a lap FastF1 marks
+        # inaccurate is not judged by a lap-time envelope (F021). Applied before
+        # ``max_fraction`` so the two compose the way they do on NotNull.
+        if self.unless is not None:
+            outside &= ~_mask(self.unless(frame, parents), frame.index)
         if self.max_fraction > 0 and len(frame):
             if float(outside.sum()) / len(frame) <= self.max_fraction:
                 return pd.Series(False, index=frame.index)

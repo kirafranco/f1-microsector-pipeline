@@ -13,6 +13,7 @@ import pandas as pd
 import pytest
 
 from src.metrics.session import compute_metrics
+from src.config import DATA_ROOT
 from src.quality.contracts import CONTRACTS, OPTIONAL_TABLES, SESSION_TABLES
 from src.quality.rules import Invariant, NotNull
 from src.quality.engine import validate_tables
@@ -278,3 +279,134 @@ class TestF018LeavesTheGateAlone:
     def test_the_microsector_label_rule_is_still_gated(self) -> None:
         rules = [r for r in CONTRACTS["microsectors"].rules if isinstance(r, NotNull)]
         assert any(set(r.check_columns) == {"event_id", "corners"} and r.unless is not None for r in rules)
+
+
+class TestF021RedFlagLaps:
+    """F021: the lap-time envelope is a unit check, judged on accurate laps.
+
+    Lap 1 of the red-flagged 2024 Monaco Grand Prix reports 2,456-2,526 s for
+    16 of 20 drivers. Those laps are real, in the right unit, marked
+    `is_accurate=False`, and dropped before the grid -- but they refused the
+    whole session, the last gate refusal of the 2024 season.
+    """
+
+    RED_FLAG_S = 2456.33
+
+    def set_lap_time(self, seconds: float, *, accurate: bool):
+        def mutate(f):
+            row = f.index[f["is_accurate"].fillna(False).astype(bool)][0]
+            f.loc[row, "lap_time"] = seconds
+            f.loc[row, "is_accurate"] = accurate
+            return f
+        return mutate
+
+    def range_findings(self, frames, seconds: float, *, accurate: bool):
+        damaged = corrupt(frames, "laps", self.set_lap_time(seconds, accurate=accurate))
+        return [f for f in findings_for(damaged, "laps")
+                if f.rule.startswith("Range") and f.columns == ("lap_time",)]
+
+    def test_a_red_flag_lap_time_on_an_inaccurate_lap_passes(self, frames) -> None:
+        assert self.range_findings(frames, self.RED_FLAG_S, accurate=False) == []
+
+    def test_the_same_time_on_an_accurate_lap_still_fails(self, frames) -> None:
+        findings = self.range_findings(frames, self.RED_FLAG_S, accurate=True)
+        assert len(findings) == 1 and findings[0].is_error
+
+    @pytest.mark.parametrize("seconds", [1.47, 88197.0])
+    def test_a_unit_error_on_an_accurate_lap_is_what_the_envelope_is_for(self, frames, seconds: float) -> None:
+        """Minutes and milliseconds: the two cases the contract's comment names."""
+        findings = self.range_findings(frames, seconds, accurate=True)
+        assert len(findings) == 1 and findings[0].is_error
+
+    @pytest.mark.parametrize("seconds", [1.47, 88197.0])
+    def test_and_is_not_judged_on_an_inaccurate_one(self, frames, seconds: float) -> None:
+        assert self.range_findings(frames, seconds, accurate=False) == []
+
+    def test_the_exemption_reaches_the_four_timing_envelopes_and_no_further(self) -> None:
+        from src.quality.rules import AllowedValues, ForeignKey, Invariant, Range, Unique
+
+        exempt = {r.column for r in CONTRACTS["laps"].rules
+                  if isinstance(r, Range) and r.unless is not None}
+        assert exempt == {"lap_time", "sector1_time", "sector2_time", "sector3_time"}
+
+        for name, contract in CONTRACTS.items():
+            for rule in contract.rules:
+                if isinstance(rule, (Unique, ForeignKey, Invariant, AllowedValues)):
+                    assert getattr(rule, "unless", None) is None, f"{name}: {rule.label}"
+                if isinstance(rule, Range) and rule.unless is not None:
+                    assert name == "laps", f"{name}: {rule.label}"
+
+    def test_identity_columns_stay_absolute(self) -> None:
+        """An inaccurate lap must still have a plausible number, stint and age."""
+        from src.quality.rules import Range
+
+        absolute = {r.column for r in CONTRACTS["laps"].rules
+                    if isinstance(r, Range) and r.unless is None}
+        assert absolute == {"lap_number", "stint", "tyre_life"}
+
+
+@pytest.mark.data
+class TestEveryAccurateLapIsInsideItsEnvelopes:
+    """F021 criterion 7, on every snapshot on disk.
+
+    The exemption can only remove findings on inaccurate rows, so the way to
+    know it changed no other session's verdict is to show there was nothing to
+    remove: no accurate lap in the 2024 season breaches any laps-table envelope.
+    """
+
+    @staticmethod
+    @pytest.fixture(scope="class")
+    def snapshots() -> list[Path]:
+        roots = sorted((DATA_ROOT / "raw" / "fastf1").glob("*/2024_*"))
+        if not roots:
+            pytest.skip("no FastF1 snapshots under data/raw/fastf1/")
+        return roots
+
+    @staticmethod
+    def timing_rules():
+        from src.quality.rules import Range
+        return [r for r in CONTRACTS["laps"].rules if isinstance(r, Range) and r.unless is not None]
+
+    def test_no_accurate_lap_breaches_any_envelope(self, snapshots) -> None:
+        from src.quality.rules import Range
+
+        rules = self.timing_rules()
+        assert rules, "the timing envelopes should carry an exemption"
+        breaches: dict[str, int] = {}
+        for root in snapshots:
+            frame = pd.read_parquet(root / "laps.parquet")
+            accurate = frame[frame["is_accurate"].fillna(False).astype(bool)]
+            for rule in rules:
+                bare = Range(column=rule.column, low=rule.low, high=rule.high)
+                count = int(bare.violations(accurate, {}).sum())
+                if count:
+                    breaches[f"{root.name} {rule.column}"] = count
+        assert breaches == {}
+
+    def test_the_exemption_leaves_nothing_flagged_anywhere(self, snapshots) -> None:
+        from src.quality.rules import Range
+
+        rules = [r for r in CONTRACTS["laps"].rules if isinstance(r, Range)]
+        flagged: dict[str, int] = {}
+        for root in snapshots:
+            frame = pd.read_parquet(root / "laps.parquet")
+            for rule in rules:
+                count = int(rule.violations(frame, {}).sum())
+                if count:
+                    flagged[f"{root.name} {rule.column}"] = count
+        assert flagged == {}
+
+    def test_monaco_is_the_session_this_was_written_for(self, snapshots) -> None:
+        """Without the exemption, exactly one session breaks, on 16 lap-1 rows."""
+        from src.quality.rules import Range
+
+        rule = next(r for r in self.timing_rules() if r.column == "lap_time")
+        bare = Range(column="lap_time", low=rule.low, high=rule.high)
+        broken = {}
+        for root in snapshots:
+            frame = pd.read_parquet(root / "laps.parquet")
+            mask = bare.violations(frame, {})
+            if mask.any():
+                broken[root.name] = frame.loc[mask, "lap_number"].unique().tolist()
+        assert list(broken) == ["2024_Monaco-Grand-Prix_R"]
+        assert broken["2024_Monaco-Grand-Prix_R"] == [1]
