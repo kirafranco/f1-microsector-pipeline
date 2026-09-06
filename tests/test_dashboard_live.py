@@ -11,7 +11,10 @@ reads every channel at one distance is criterion 10, and it is checked by hand.
 
 from __future__ import annotations
 
+import os
+import re
 import shutil
+import subprocess
 import time
 import urllib.error
 
@@ -32,6 +35,42 @@ GAP_TOLERANCE_S = 0.35
 
 #: Criterion 6. Both sides are float32 sums, so this is float noise, not slack.
 CLOSURE_TOLERANCE_S = 1e-3
+
+#: F023. Execution buffers a single panel may touch -- about 4 MB. Elapsed time
+#: alone cannot police this: warm, a panel that scans all 96 partitions still
+#: answers in 130-180 ms and passes the budget above, which is how a 259 MB
+#: refresh survived the whole 2024 backfill unnoticed. Buffers do not care what
+#: is cached. Every panel measures <= 76 with pruning; a full scan of
+#: `fact_microsector` starts around 5,000.
+PANEL_BUFFERS_MAX = 500
+
+
+def explain(env, sql: str) -> str:
+    """A plan, straight from psql.
+
+    Grafana's datasource API returns no columns for EXPLAIN, so this one query
+    goes to Postgres directly. The password travels in the environment, never in
+    an argument list.
+    """
+    result = subprocess.run(
+        ["docker", "exec", "-e", "PGPASSWORD", f"{env['COMPOSE_PROJECT_NAME']}-postgres",
+         "psql", "-U", env["POSTGRES_USER"], "-d", env["POSTGRES_DB"], "-tAc", sql],
+        capture_output=True, text=True,
+        env={**os.environ, "PGPASSWORD": env["POSTGRES_PASSWORD"]},
+    )
+    assert result.returncode == 0, result.stderr[:400]
+    return result.stdout
+
+
+def _execution_buffers(plan: str) -> int:
+    """Buffers touched by the query itself, ignoring the planner's catalog reads."""
+    for line in plan.splitlines():
+        if line.strip().startswith("Planning:"):
+            break
+        found = re.search(r"Buffers: shared hit=(\d+)(?: read=(\d+))?", line)
+        if found:
+            return int(found.group(1)) + int(found.group(2) or 0)
+    return 0
 
 
 def query(env, sql: str) -> tuple[dict[str, list], float]:
@@ -172,6 +211,23 @@ class TestCriterion2And3EveryQueryRuns:
             if elapsed_ms > QUERY_BUDGET_MS:
                 slow.append(f"{title}: {elapsed_ms:.0f} ms")
         assert slow == [], f"over {QUERY_BUDGET_MS:.0f} ms: {slow}"
+
+    def test_no_panel_reads_more_than_its_session(self, env, dashboard: dict, resolved) -> None:
+        """F023: the check elapsed time cannot make.
+
+        Only the top plan node's buffers are counted. The `Planning:` line
+        reports catalog and index metadata the planner reads to consider every
+        partition, which is a real cost but a different one -- and counting the
+        two together makes a pruned plan look worse than a full scan.
+        """
+        heavy: list[str] = []
+        for title, sql in dash.panel_sql(dashboard):
+            statement = dash.substitute(sql, resolved)
+            plan = explain(env, f"EXPLAIN (ANALYZE, BUFFERS, COSTS OFF) {statement}")
+            buffers = _execution_buffers(plan)
+            if buffers > PANEL_BUFFERS_MAX:
+                heavy.append(f"{title}: {buffers:,} buffers ({buffers * 8 / 1024:.1f} MB)")
+        assert heavy == [], f"over {PANEL_BUFFERS_MAX} buffers: {heavy}"
 
     def test_every_variable_query_is_quick_too(self, env, dashboard: dict, resolved) -> None:
         """These run on every dashboard load, before a single panel draws."""
