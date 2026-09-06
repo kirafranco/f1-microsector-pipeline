@@ -35,7 +35,10 @@ TARGET = {"season": 2024, "event": "Japanese Grand Prix", "session": "Q"}
 TARGET_KEY = (2024, 4, "Q")
 
 #: F005 measured these on this session; the DAG must reproduce them exactly.
-EXPECTED_ROWS = {"rows_grid": 42418, "rows_microsector": 6882,
+#: Re-derived by F018, which placed the lift before the apex band and so gave
+#: Suzuka 57 fixed 100 m bins instead of 58: 92 micro-sectors per lap rather
+#: than 93, and 74 laps x 3 fewer grid points. Lap and corner counts unmoved.
+EXPECTED_ROWS = {"rows_grid": 42198, "rows_microsector": 6808,
                  "rows_corner": 592, "rows_lap": 74}
 
 
@@ -221,7 +224,7 @@ class TestCriterion4And5APipelineRun:
             f"/api/v2/dags/f1_session_pipeline/dagRuns/{first_run['run_id']}/taskInstances")
         states = {task["task_id"]: task["state"] for task in tasks["task_instances"]}
         assert set(states) == {"wait_for_data", "ingest", "align", "grid", "segment",
-                               "metrics", "validate", "quality", "load"}
+                               "metrics", "validate", "quality", "load", "summarise"}
         assert set(states.values()) == {"success"}, states
 
     def test_the_session_is_in_the_warehouse(self, env: dict[str, str], first_run: dict) -> None:

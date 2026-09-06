@@ -184,3 +184,50 @@ services:
         limits:
           memory: 4G
           cpus: "2"
+
+  spark:
+    # Spark Connect server for the resampling executor (F013). Built on the
+    # official python image, not apache/spark, so the whole stack shares one
+    # requirements.txt -- see servicios/spark/Dockerfile for why.
+    build:
+      context: ..
+      dockerfile: servicios/spark/Dockerfile
+    image: ${COMPOSE_PROJECT_NAME}-spark:4.1.1
+    container_name: ${COMPOSE_PROJECT_NAME}-spark
+    # Only up while the grid stage is running on Spark: with orchestration this
+    # is postgres 2 GB + Airflow 4 GB + Spark 4 GB (D9).
+    profiles: [pipeline]
+    restart: unless-stopped
+    environment:
+      # local[*] takes every core the container is allowed; the limit below is
+      # what actually bounds it.
+      SPARK_LOCAL_CORES: "*"
+      PYTHONPATH: /opt/project
+      TZ: UTC
+    ports:
+      # Loopback unless a machine's own .env says otherwise, like every other
+      # service here. The Connect server has no authentication, which makes
+      # that the mitigation rather than a preference.
+      - "${SPARK_BIND_ADDRESS}:${SPARK_CONNECT_PORT}:15002"
+    volumes:
+      # The project read-only: the server imports src/ to resolve the pandas UDF
+      # Connect sends by reference, and has no business rewriting it.
+      - ../:/opt/project:ro
+      # data/ writable over the top -- the executor reads the aligned parquet
+      # from the server's own filesystem.
+      - ../data:/opt/project/data
+    healthcheck:
+      # No HTTP endpoint on a Connect server: a TCP probe of the gRPC port is
+      # the honest check. bash's /dev/tcp needs no extra package.
+      test: ["CMD-SHELL", "timeout 3 bash -c '</dev/tcp/localhost/15002' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      # A cold JVM plus the Connect jars resolving takes a while on first start.
+      start_period: 180s
+    networks: [f1net]
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "2"

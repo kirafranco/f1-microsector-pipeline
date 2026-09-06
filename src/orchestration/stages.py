@@ -13,6 +13,7 @@ scheduler involved.
 from __future__ import annotations
 
 import logging
+import os
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -93,13 +94,44 @@ def align(run: SessionRun, snapshot_date: str | None = None) -> dict:
     }
 
 
+#: Which engine resamples. `pandas` is the default and the engine the
+#: validation suite runs on; `spark` distributes the same per-lap function
+#: across a Connect server (F013, D2). Anything else is a configuration error
+#: rather than a silent fallback.
+GRID_EXECUTORS = ("pandas", "spark")
+GRID_EXECUTOR_ENV = "F1_GRID_EXECUTOR"
+
+
+def grid_executor() -> str:
+    """The configured executor, validated at stage start."""
+    name = os.environ.get(GRID_EXECUTOR_ENV, "pandas").strip().lower() or "pandas"
+    if name not in GRID_EXECUTORS:
+        raise ValueError(
+            f"{GRID_EXECUTOR_ENV}={name!r} is not one of {GRID_EXECUTORS}; "
+            "unset it for the pandas executor"
+        )
+    return name
+
+
 def grid(run: SessionRun) -> dict:
-    """Resample every aligned lap onto the shared 10 m axis (F003)."""
-    result = resample_session(run.aligned_root, out_root=run.grid_root)
-    logger.info("stage_grid %s rows=%d laps=%d/%d",
-                run.label, result.rows, result.laps_resampled, result.laps_total)
+    """Resample every aligned lap onto the shared 10 m axis (F003).
+
+    On Spark the maths is identical -- the same `resample_lap` runs inside a
+    grouped-map pandas UDF -- and the two executors share everything after it,
+    so the written files are the same either way (F013).
+    """
+    executor = grid_executor()
+    if executor == "spark":
+        from src.grid.spark import resample_session_spark
+
+        result = resample_session_spark(run.aligned_root, out_root=run.grid_root)
+    else:
+        result = resample_session(run.aligned_root, out_root=run.grid_root)
+    logger.info("stage_grid %s executor=%s rows=%d laps=%d/%d",
+                run.label, executor, result.rows, result.laps_resampled, result.laps_total)
     return {
         "root": str(result.root),
+        "executor": executor,
         "grid_m": float(result.grid_m),
         "rows": int(result.rows),
         "laps_resampled": int(result.laps_resampled),
