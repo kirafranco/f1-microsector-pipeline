@@ -111,3 +111,72 @@ def substitute(sql: str, values: dict[str, object]) -> str:
 def unresolved(sql: str) -> list[str]:
     """Variable references left in a statement after substitution."""
     return [match for match in re.findall(r"\$\{?[a-z_][a-z0-9_]*", sql, re.IGNORECASE)]
+
+
+def resolve_like_grafana(dashboard: dict, run_query) -> dict[str, str]:
+    """Resolve every variable the way Grafana's frontend does, in dependency order.
+
+    F024 exists because nothing did this. The live suite built its own
+    self-consistent combination and substituted it by hand, which proves each
+    panel *can* answer -- not that the dashboard's own default state lands
+    somewhere that returns rows. A stale `lap_a` from a warehouse reload
+    survived exactly that gap and showed a person eighteen empty panels.
+
+    The rules modelled here are Grafana's:
+
+    * run the variable's query with whatever is already resolved;
+    * keep a saved `current` only if it is among the returned options;
+    * otherwise fall back to the first option -- unless `allowCustomValue`
+      permits a value that is not in the list, which is what lets a stale id
+      survive.
+
+    ``run_query(sql)`` takes interpolated SQL and returns a list of
+    ``(value, text)`` pairs, so this helper stays free of any HTTP client.
+    """
+    order = _dependency_order(dashboard)
+    resolved: dict[str, str] = {}
+    for name in order:
+        variable = variables(dashboard)[name]
+        if variable["type"] != "query":
+            current = variable.get("current") or {}
+            if current.get("value") is not None:
+                resolved[name] = str(current["value"])
+            continue
+        statement = substitute(variable["query"], resolved)
+        if unresolved(statement):
+            raise AssertionError(f"{name}: cannot resolve, still needs {unresolved(statement)}")
+        options = [str(value) for value, _text in run_query(statement)]
+        saved = (variable.get("current") or {}).get("value")
+        saved = None if saved in (None, "", []) else str(saved)
+        if saved is not None and saved in options:
+            resolved[name] = saved
+        elif saved is not None and variable.get("allowCustomValue", True):
+            # Grafana keeps a value outside the options list unless told not to.
+            resolved[name] = saved
+        elif options:
+            resolved[name] = options[0]
+        else:
+            raise AssertionError(f"{name}: the variable query returned no options")
+    return resolved
+
+
+def _dependency_order(dashboard: dict) -> list[str]:
+    """Variable names, parents before the variables that interpolate them."""
+    defined = variables(dashboard)
+    needs = {
+        name: {other for other in defined if other != name and _mentions(v.get("query", ""), other)}
+        for name, v in defined.items()
+    }
+    order: list[str] = []
+    while len(order) < len(defined):
+        ready = [n for n in defined if n not in order and needs[n] <= set(order)]
+        if not ready:
+            raise AssertionError(f"variables form a cycle: {needs}")
+        order.extend(sorted(ready))
+    return order
+
+
+def _mentions(sql: str, name: str) -> bool:
+    if not isinstance(sql, str):
+        return False
+    return bool(re.search(r"\$\{?" + re.escape(name) + r"[:}\s]|\$" + re.escape(name) + r"\b", sql))
