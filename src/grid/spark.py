@@ -48,6 +48,11 @@ CONTAINER_PROJECT_ROOT = PurePosixPath("/opt/project")
 #: localhost and the port published in servicios/.env.
 DEFAULT_REMOTE = "sc://localhost:15002"
 
+#: Scratch inside the project, so the Spark container can see it. Anything the
+#: server has to read must live under the bind mount; `container_path` refuses
+#: the rest rather than handing over a path that resolves to nothing there.
+PROJECT_TMP = "data/tmp"
+
 #: `GRID_SCHEMA` in Spark's vocabulary. Kept beside it and pinned by a test, so
 #: a column added to one and not the other fails offline rather than at runtime.
 _SPARK_TYPES = {

@@ -8,6 +8,7 @@ Python. The marked class needs the Connect server from the `pipeline` profile.
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 
 import pandas as pd
@@ -130,29 +131,65 @@ class TestExecutorSelection:
 
 @pytest.mark.spark
 class TestAgainstTheConnectServer:
-    """Needs `docker compose --profile pipeline up -d spark`."""
+    """Needs `docker compose --profile pipeline up -d spark`.
+
+    The session has to live under `data/`, because that is what the Spark
+    container can see: `container_path` refuses anything outside the project,
+    which is the guard working, not a limitation to route around.
+    """
 
     @staticmethod
     @pytest.fixture(scope="class")
-    def designed(tmp_path_factory: pytest.TempPathFactory) -> Path:
-        root = tmp_path_factory.mktemp("spark")
-        aligned_root, _, _ = syn.write_session(root)
-        return aligned_root
+    def designed():
+        from src.config import DATA_ROOT
 
-    def test_it_equals_the_pandas_executor_on_the_designed_session(self, designed, tmp_path: Path) -> None:
-        pandas_result = resample_session(designed, out_root=tmp_path / "pandas")
-        spark_result = mod.resample_session_spark(designed, out_root=tmp_path / "spark")
+        root = DATA_ROOT / "tmp" / "spark_equivalence_test"
+        if root.exists():
+            shutil.rmtree(root)
+        root.mkdir(parents=True)
+        try:
+            # write_session returns (grid_root, snapshot_root, aligned_root).
+            _, _, aligned_root = syn.write_session(root)
+            yield aligned_root
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
+    def test_it_equals_the_pandas_executor_on_the_designed_session(self, designed) -> None:
+        out = designed.parent
+        pandas_result = resample_session(designed, out_root=out / "grid_pandas")
+        spark_result = mod.resample_session_spark(designed, out_root=out / "grid_spark")
         assert spark_result.rows == pandas_result.rows
         for name in ("grid.parquet", "rejected_laps.parquet"):
-            a = pd.read_parquet(tmp_path / "pandas" / name)
-            b = pd.read_parquet(tmp_path / "spark" / name)
+            a = pd.read_parquet(out / "grid_pandas" / name)
+            b = pd.read_parquet(out / "grid_spark" / name)
             sort = KEY if name == "grid.parquet" else ["driver", "lap_number"]
             pd.testing.assert_frame_equal(a.sort_values(sort).reset_index(drop=True),
                                           b.sort_values(sort).reset_index(drop=True), check_exact=True)
 
-    def test_the_meta_records_which_executor_ran(self, designed, tmp_path: Path) -> None:
+    def test_the_meta_records_which_executor_ran(self, designed) -> None:
         import json
 
-        mod.resample_session_spark(designed, out_root=tmp_path / "spark")
-        meta = json.loads((tmp_path / "spark" / "grid_meta.json").read_text(encoding="utf-8"))
+        out = designed.parent / "grid_meta_check"
+        mod.resample_session_spark(designed, out_root=out)
+        meta = json.loads((out / "grid_meta.json").read_text(encoding="utf-8"))
         assert meta["executor"] == "spark"
+
+    def test_a_real_session_matches_what_is_on_disk(self, tmp_path: Path) -> None:
+        """F013's criterion 1, on whichever session is present."""
+        from src.config import INTERIM_ROOT
+
+        candidates = sorted((INTERIM_ROOT / "aligned").glob("2024_*_projection"))
+        candidates = [c for c in candidates if (INTERIM_ROOT / "grid" / c.name / "grid.parquet").exists()]
+        if not candidates:
+            pytest.skip("no ingested session under data/interim/")
+        aligned = candidates[0]
+        out = Path(mod.PROJECT_TMP) / "spark_real_session"
+        shutil.rmtree(out, ignore_errors=True)
+        try:
+            mod.resample_session_spark(aligned, out_root=out)
+            a = pd.read_parquet(INTERIM_ROOT / "grid" / aligned.name / "grid.parquet")
+            b = pd.read_parquet(out / "grid.parquet")
+            pd.testing.assert_frame_equal(a.sort_values(KEY).reset_index(drop=True),
+                                          b.sort_values(KEY).reset_index(drop=True), check_exact=True)
+        finally:
+            shutil.rmtree(out, ignore_errors=True)
