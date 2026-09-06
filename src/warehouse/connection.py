@@ -32,6 +32,16 @@ DEFAULT_PORT = 55432
 #: So a wrong host or a stopped stack fails in seconds instead of hanging.
 DEFAULT_CONNECT_TIMEOUT_S = 10
 
+#: Which role a consumer connects as. The pipeline owns the warehouse and needs
+#: `admin`; a dashboard, a notebook or the pit-wall service reads and must not
+#: be able to do more than read, so they ask for `readonly` and get the role
+#: F001's init script created. Naming it here keeps one credential path for
+#: every read-only consumer rather than a DSN assembled in each of them (F017).
+ROLE_KEYS = {
+    "admin": ("POSTGRES_USER", "POSTGRES_PASSWORD", "f1_admin"),
+    "readonly": ("POSTGRES_READONLY_USER", "POSTGRES_READONLY_PASSWORD", "f1_readonly"),
+}
+
 
 class SettingsError(RuntimeError):
     """The database connection is not configured."""
@@ -61,24 +71,33 @@ class Settings:
 
     @classmethod
     def from_env(cls, env_file: Path = ENV_FILE, environ: dict[str, str] | None = None,
-                 database: str | None = None) -> "Settings":
+                 database: str | None = None, role: str = "admin") -> "Settings":
         """Settings from ``servicios/.env``, overridden by the environment.
 
         The environment wins so a container can point at the service name
         without editing the file the host uses.
+
+        ``role`` picks which credentials to read: ``admin`` (the default, and
+        what the pipeline has always used) or ``readonly``. A missing read-only
+        password is an error rather than a fall back to the admin one -- a
+        consumer that asked to be unable to write must not silently gain the
+        ability (F017).
         """
+        if role not in ROLE_KEYS:
+            raise SettingsError(f"unknown role {role!r}; expected one of {sorted(ROLE_KEYS)}")
+        user_key, password_key, default_user = ROLE_KEYS[role]
         environ = dict(os.environ if environ is None else environ)
         values = {**read_env_file(env_file), **environ}
-        password = values.get("POSTGRES_PASSWORD", "")
+        password = values.get(password_key, "")
         if not password:
             raise SettingsError(
-                f"no POSTGRES_PASSWORD in {env_file} or the environment; copy servicios/.env.example to .env"
+                f"no {password_key} in {env_file} or the environment; copy servicios/.env.example to .env"
             )
         return cls(
             host=values.get("POSTGRES_HOST", DEFAULT_HOST),
             port=int(values.get("POSTGRES_PORT", DEFAULT_PORT)),
             database=database or values.get("POSTGRES_DB", "f1_microsector"),
-            user=values.get("POSTGRES_USER", "f1_admin"),
+            user=values.get(user_key, default_user),
             password=password,
             connect_timeout_s=int(values.get("POSTGRES_CONNECT_TIMEOUT", DEFAULT_CONNECT_TIMEOUT_S)),
         )

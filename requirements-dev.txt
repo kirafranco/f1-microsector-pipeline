@@ -5,6 +5,16 @@
 
 -r requirements.txt
 
+# The pit-wall service's pins (F017), so its offline tests can import
+# fastapi, plotly and the pool without a container.
+-r requirements-pitwall.txt
+
 pytest==9.1.1
 
 pyyaml==6.0.3
+
+# Starlette's TestClient, which FastAPI re-exports, drives the pit-wall routes
+# in-process -- no uvicorn, no container. Test-only, so it is here rather than
+# in requirements-pitwall.txt: the service image has no business carrying an
+# HTTP client for tests. Maintained by pydantic (F017).
+httpx2==2.12.0
