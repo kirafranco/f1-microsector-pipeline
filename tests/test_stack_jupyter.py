@@ -77,9 +77,17 @@ def env() -> dict[str, str]:
 
 @pytest.fixture(scope="module")
 def stack(env: dict[str, str]) -> float:
-    """Seconds from before `up -d` until jupyter reports healthy."""
+    """Seconds from `up` until jupyter reports healthy.
+
+    The image is built first and not timed. F017 found the same fixture shape
+    failing once when a rebase invalidated the build cache: a cold image build
+    inside the timed window measures how warm Docker's cache is, not how
+    quickly the service starts, which is what the criterion is about.
+    """
+    built = run([*COMPOSE, "build", "jupyter"])
+    assert built.returncode == 0, built.stderr[-800:]
     started = time.monotonic()
-    result = run([*COMPOSE, "up", "-d", "--build"])
+    result = run([*COMPOSE, "up", "-d"])
     assert result.returncode == 0, result.stderr[-800:]
     while time.monotonic() - started < STARTUP_TIMEOUT_S:
         if health(env) == "healthy":

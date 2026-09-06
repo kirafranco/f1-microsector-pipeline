@@ -31,7 +31,15 @@ COMPOSE = ["docker", "compose", "-f", str(SERVICIOS / "docker-compose.yml"), "--
 STARTUP_TIMEOUT_S = 180
 
 #: Criterion 4. The prototype answered 1.4 s after `docker run`; this is measured
-#: from before `up`, so it also covers postgres coming up first.
+#: from before `up`, so it also covers postgres coming up first. Measured at
+#: 7.2 s with four other containers already running.
+#:
+#: The image is built *before* the clock starts, deliberately. An earlier
+#: version timed `up -d --build` and failed once, on the first full-suite run
+#: after a rebase invalidated the build cache: a 75 s cold image build plus
+#: postgres coming up exceeded the budget. That measured how warm Docker's
+#: cache happened to be, not how quickly the service starts, which is what the
+#: criterion is about.
 HEALTHY_BUDGET_S = 90.0
 #: Criterion 5. The prototype idled at 54 MiB and reached 79 MiB after 21 renders.
 IDLE_MEMORY_MAX_MIB = 256.0
@@ -86,8 +94,11 @@ def env() -> dict[str, str]:
 
 @pytest.fixture(scope="module")
 def stack(env: dict[str, str]) -> float:
+    """Seconds from `up` to healthy. The build is done first and not timed."""
+    built = run([*COMPOSE, "build", "pitwall"])
+    assert built.returncode == 0, built.stderr[-800:]
     started = time.monotonic()
-    result = run([*COMPOSE, "up", "-d", "--build"])
+    result = run([*COMPOSE, "up", "-d"])
     assert result.returncode == 0, result.stderr[-800:]
     while time.monotonic() - started < STARTUP_TIMEOUT_S:
         if health(env) == "healthy":
