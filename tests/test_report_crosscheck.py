@@ -185,18 +185,19 @@ class TestSectorReconciliation:
     gap and an official one should be the difference of the two laps' own
     registration residuals, which F010 measured per lap."""
 
-    def frames(self, s_official_a, s_official_b, residual_a, residual_b, curve_b_offsets):
+    def frames(self, s_official_a, s_official_b, residual_a, residual_b, curve_b_offsets, start_offsets=None):
         lap_summary = pd.DataFrame([
             {"driver": "AAA", "lap_number": 1, "lap_time_s": 60.0,
              "s1_official_s": s_official_a[0], "s2_official_s": s_official_a[1], "s3_official_s": s_official_a[2]},
             {"driver": "BBB", "lap_number": 1, "lap_time_s": 60.2,
              "s1_official_s": s_official_b[0], "s2_official_s": s_official_b[1], "s3_official_s": s_official_b[2]},
         ])
+        offsets = start_offsets or (0.0, 0.0)
         ground_truth = pd.DataFrame([
             {"driver": "AAA", "lap_number": 1, "s1_residual_s": residual_a[0],
-             "s2_residual_s": residual_a[1], "s3_residual_s": residual_a[2]},
+             "s2_residual_s": residual_a[1], "s3_residual_s": residual_a[2], "start_offset_s": offsets[0]},
             {"driver": "BBB", "lap_number": 1, "s1_residual_s": residual_b[0],
-             "s2_residual_s": residual_b[1], "s3_residual_s": residual_b[2]},
+             "s2_residual_s": residual_b[1], "s3_residual_s": residual_b[2], "start_offset_s": offsets[1]},
         ])
         indices = np.arange(0, 101)
         curve_a = indices * 0.2
@@ -218,9 +219,10 @@ class TestSectorReconciliation:
                                                  (300.0, 750.0), ("AAA", 1), ("BBB", 1))
         assert frame["unexplained_s"].abs().max() < 1e-9
 
-    def test_a_registration_shift_lands_in_the_residual_column_not_the_remainder(self) -> None:
-        """This is the whole point: the grid disagrees with the timing feed, and
-        the amount is already known per lap."""
+    def test_the_identity_column_reproduces_the_difference(self) -> None:
+        """S2 and S3 never straddle the line, so the residual difference equals
+        the difference row by algebra -- a consistency check, not an
+        explanation. F020 renamed the column to say so."""
         lap_summary, ground_truth, delta_t = self.frames(
             s_official_a=(20.0, 20.0, 20.0), s_official_b=(20.1, 20.0, 20.1),
             residual_a=(0.0, 0.0, 0.0), residual_b=(-0.05, 0.05, 0.0),
@@ -228,8 +230,7 @@ class TestSectorReconciliation:
         frame = crosscheck.sector_reconciliation(lap_summary, ground_truth, delta_t,
                                                  (300.0, 750.0), ("AAA", 1), ("BBB", 1))
         assert frame.loc["s1", "difference_s"] == pytest.approx(-0.05, abs=1e-9)
-        assert frame.loc["s1", "f010_residual_difference_s"] == pytest.approx(-0.05)
-        assert frame.loc["s1", "unexplained_s"] == pytest.approx(0.0, abs=1e-9)
+        assert frame.loc["s1", "identity_check_s"] == pytest.approx(-0.05)
 
     def test_laps_that_share_no_grid_are_an_error_not_a_silent_nan(self) -> None:
         lap_summary, ground_truth, delta_t = self.frames(
@@ -238,3 +239,56 @@ class TestSectorReconciliation:
         with pytest.raises(ReportError, match="grid index"):
             crosscheck.sector_reconciliation(lap_summary, ground_truth, delta_t,
                                              (300.0, 750.0), ("AAA", 1), ("BBB", 1))
+
+
+class TestStartOffsetExplainsS1:
+    """F020: S1 straddles the timing line, so the grid cannot see that stretch."""
+
+    def frames(self, start_offsets, s1_gap_official, curve_b_s1_offset):
+        lap_summary = pd.DataFrame([
+            {"driver": "AAA", "lap_number": 1, "lap_time_s": 60.0,
+             "s1_official_s": 20.0, "s2_official_s": 20.0, "s3_official_s": 20.0},
+            {"driver": "BBB", "lap_number": 1, "lap_time_s": 60.0,
+             "s1_official_s": 20.0 + s1_gap_official, "s2_official_s": 20.0, "s3_official_s": 20.0},
+        ])
+        ground_truth = pd.DataFrame([
+            {"driver": "AAA", "lap_number": 1, "s1_residual_s": 0.0, "s2_residual_s": 0.0,
+             "s3_residual_s": 0.0, "start_offset_s": start_offsets[0]},
+            {"driver": "BBB", "lap_number": 1, "s1_residual_s": 0.0, "s2_residual_s": 0.0,
+             "s3_residual_s": 0.0, "start_offset_s": start_offsets[1]},
+        ])
+        indices = np.arange(0, 101)
+        curve_a = indices * 0.2
+        curve_b = curve_a.copy()
+        curve_b[30:] += curve_b_s1_offset  # the S1 boundary is grid index 30
+        delta_t = pd.concat([
+            pd.DataFrame({"driver": "AAA", "lap_number": 1, "grid_index": indices, "t_s": curve_a}),
+            pd.DataFrame({"driver": "BBB", "lap_number": 1, "grid_index": indices, "t_s": curve_b}),
+        ], ignore_index=True)
+        return lap_summary, ground_truth, delta_t
+
+    def reconcile(self, **kwargs):
+        return crosscheck.sector_reconciliation(*self.frames(**kwargs), (300.0, 750.0), ("AAA", 1), ("BBB", 1))
+
+    def test_a_pair_that_crossed_the_line_together_leaves_nothing_unexplained(self) -> None:
+        frame = self.reconcile(start_offsets=(0.7, 0.7), s1_gap_official=0.05, curve_b_s1_offset=0.05)
+        assert frame.loc["s1", "start_offset_difference_s"] == pytest.approx(0.0)
+        assert frame.loc["s1", "unexplained_s"] == pytest.approx(0.0, abs=1e-9)
+
+    def test_a_difference_over_the_stretch_is_what_explains_s1(self) -> None:
+        """B reached grid zero 0.05 s sooner, so its grid S1 looks 0.05 s longer
+        than the official gap. That is the offset, not a disagreement."""
+        frame = self.reconcile(start_offsets=(0.70, 0.65), s1_gap_official=0.0, curve_b_s1_offset=0.05)
+        assert frame.loc["s1", "difference_s"] == pytest.approx(0.05, abs=1e-9)
+        assert frame.loc["s1", "start_offset_difference_s"] == pytest.approx(-0.05)
+        assert frame.loc["s1", "explained_s"] == pytest.approx(0.05)
+        assert frame.loc["s1", "unexplained_s"] == pytest.approx(0.0, abs=1e-9)
+
+    def test_the_offset_is_not_applied_to_s2_or_s3(self) -> None:
+        frame = self.reconcile(start_offsets=(0.70, 0.65), s1_gap_official=0.0, curve_b_s1_offset=0.05)
+        assert frame.loc[["s2", "s3"], "start_offset_difference_s"].isna().all()
+
+    def test_an_unaccounted_disagreement_survives(self) -> None:
+        """The gate has to be able to fail: half the S1 gap is left over."""
+        frame = self.reconcile(start_offsets=(0.70, 0.675), s1_gap_official=0.0, curve_b_s1_offset=0.05)
+        assert frame.loc["s1", "unexplained_s"] == pytest.approx(0.025, abs=1e-9)

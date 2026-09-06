@@ -6,11 +6,14 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from src.validate.closure import _time_at
+
 from src.validate.timing_line import (
     CROSSING_SCHEMA,
     TimingLineError,
     line_crossings,
     session_line_positions,
+    start_stretch,
 )
 
 LINE_LENGTH_M = 1000.0
@@ -136,3 +139,94 @@ class TestSessionPositions:
     def test_empty_is_an_error(self) -> None:
         with pytest.raises(TimingLineError):
             session_line_positions(pd.DataFrame(columns=list(CROSSING_SCHEMA)))
+
+
+# --- F020: the line-to-grid-zero stretch -------------------------------------
+
+LINE_M = -100.0
+V_FIRST_KMH = 360.0   # 100 m/s at the first sample
+V_ZERO_KMH = 180.0    # 50 m/s at grid 0: the car is braking over the stretch
+
+
+def lap_samples(first_m: float = -88.0, decelerating: bool = True, n: int = 60) -> pd.DataFrame:
+    """One physical run from the line to grid 0, sampled from ``first_m`` onward.
+
+    Constant acceleration, so distance and speed are exact: from 100 m/s at the
+    line to 50 m/s at grid 0 takes 4/3 s over the 100 m, while assuming the
+    grid-0 speed held throughout would say 2 s. Changing ``first_m`` samples the
+    same run later, it does not change the motion.
+    """
+    v0, v1 = V_FIRST_KMH / 3.6, (V_ZERO_KMH if decelerating else V_FIRST_KMH) / 3.6
+    span = -LINE_M
+    a = (v1 ** 2 - v0 ** 2) / (2 * span)
+    total = (v1 - v0) / a if a != 0 else span / v0
+    t = np.linspace(0.0, total, n)
+    d = LINE_M + v0 * t + 0.5 * a * t ** 2
+    v = v0 + a * t
+    keep = d >= first_m
+    return pd.DataFrame({"session_time": t[keep], "distance_aligned": d[keep], "speed": v[keep] * 3.6})
+
+
+def crossings_frame(samples: pd.DataFrame, lap_start_time: float = 0.0) -> pd.DataFrame:
+    """A one-row crossings frame with the F020 columns filled from the samples."""
+    finite = samples["distance_aligned"].to_numpy(float)
+    t_zero = float(np.interp(0.0, finite, samples["session_time"].to_numpy(float)))
+    return pd.DataFrame([{
+        "driver": "AAA", "lap_number": 1,
+        "t_zero_s": t_zero,
+        "first_sample_m": float(finite[0]),
+        "first_sample_s": float(samples["session_time"].iloc[0]),
+        "first_sample_kmh": float(samples["speed"].iloc[0]),
+        "start_offset_s": t_zero - lap_start_time,
+    }])
+
+
+class TestStartStretch:
+    def test_it_measures_the_line_to_grid_zero_time(self) -> None:
+        """The exact answer for this run is 4/3 s."""
+        stretch = start_stretch(crossings_frame(lap_samples()), LINE_M)
+        assert float(stretch.iloc[0]) == pytest.approx(4.0 / 3.0, abs=0.01)
+
+    def test_the_constant_speed_extrapolation_is_wrong_by_a_known_amount(self) -> None:
+        """What F020 replaces: assuming the grid-0 speed held all the way back."""
+        samples = lap_samples()
+        measured = float(start_stretch(crossings_frame(samples), LINE_M).iloc[0])
+        grid_d = np.array([0.0, 10.0]); grid_t = np.array([0.0, 10.0 / (V_ZERO_KMH / 3.6)])
+        extrapolated = -_time_at(grid_d, grid_t, np.array([V_ZERO_KMH / 3.6] * 2), LINE_M)
+        assert extrapolated == pytest.approx(2.0, abs=1e-9)
+        assert measured == pytest.approx(4.0 / 3.0, abs=0.01)
+        assert extrapolated - measured == pytest.approx(2.0 / 3.0, abs=0.01)
+
+    def test_a_lap_at_constant_speed_agrees_with_the_extrapolation(self) -> None:
+        samples = lap_samples(decelerating=False)
+        measured = float(start_stretch(crossings_frame(samples), LINE_M).iloc[0])
+        assert measured == pytest.approx(1.0, abs=1e-6)
+
+    def test_the_error_is_bounded_by_the_gap_before_the_first_sample(self) -> None:
+        """Only those metres are extrapolated, so the answer degrades with the gap.
+
+        This run brakes at 37.5 m/s^2 across the whole stretch, which is harsher
+        than any real line-to-grid-0 approach, so these are worst cases. Real
+        laps open 12-18 m past the line.
+        """
+        exact = 4.0 / 3.0
+        errors = [abs(float(start_stretch(crossings_frame(lap_samples(first_m=first)), LINE_M).iloc[0]) - exact)
+                  for first in (-99.0, -88.0, -70.0)]
+        assert errors[0] < 0.002                      # a 1 m gap is negligible
+        assert errors[1] < 0.010                      # 12 m, the real spacing
+        assert errors == sorted(errors)               # and it grows with the gap, never jumps
+
+    def test_a_lap_with_no_sample_before_grid_zero_is_nan(self) -> None:
+        frame = crossings_frame(lap_samples())
+        frame.loc[0, "t_zero_s"] = np.nan
+        assert np.isnan(float(start_stretch(frame, LINE_M).iloc[0]))
+
+    def test_a_stopped_first_sample_does_not_divide_by_zero(self) -> None:
+        frame = crossings_frame(lap_samples())
+        frame.loc[0, "first_sample_kmh"] = 0.0
+        assert np.isnan(float(start_stretch(frame, LINE_M).iloc[0]))
+
+    def test_it_is_keyed_by_driver_and_lap(self) -> None:
+        stretch = start_stretch(crossings_frame(lap_samples()), LINE_M)
+        assert stretch.index.names == ["driver", "lap_number"]
+        assert ("AAA", 1) in stretch.index

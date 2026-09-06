@@ -180,8 +180,8 @@ def fig_sector_reconciliation(frame: pd.DataFrame, path: Path, *, label_a: str, 
              color="#33475b", zorder=3)
     axes.bar(positions, frame["grid_gap_s"], width, label="reconstructed from the grid",
              color=COLOUR_A, zorder=3)
-    axes.bar(positions + width, frame["f010_residual_difference_s"], width,
-             label="F010 registration residual, B − A", color=COLOUR_NOISE, zorder=3)
+    axes.bar(positions + width, frame["explained_s"], width,
+             label="accounted for (S1: start offset; S2/S3: identity)", color=COLOUR_NOISE, zorder=3)
     axes.axhline(0, color="#333333", linewidth=1.0, zorder=2)
 
     axes.set_xticks(positions)
@@ -193,7 +193,7 @@ def fig_sector_reconciliation(frame: pd.DataFrame, path: Path, *, label_a: str, 
 
     # Headroom first, then the labels: annotating against the current limits
     # puts the tallest group's caption through the top of the frame.
-    columns = ["official_gap_s", "grid_gap_s", "f010_residual_difference_s"]
+    columns = ["official_gap_s", "grid_gap_s", "explained_s"]
     tallest = float(frame[columns].to_numpy().max())
     lowest = float(frame[columns].to_numpy().min())
     axes.set_ylim(lowest - abs(lowest) * 0.15 - 0.01, tallest + abs(tallest) * 0.55 + 0.01)

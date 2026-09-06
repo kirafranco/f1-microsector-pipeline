@@ -35,12 +35,18 @@ def reconstruct_laps(
     s1_m: float,
     s2_m: float,
     grid_m: float = 10.0,
+    start_stretch: pd.Series | None = None,
 ) -> pd.DataFrame:
     """Grid lap and sector times between the timing-line positions, with residuals.
 
     ``curves`` is F004's wide ``t_s`` table and ``speeds`` the matching wide
     speed table, both indexed by lap key. Sector splits use F008's S1/S2
     positions on the same axis.
+
+    ``start_stretch`` (F020) gives each lap's measured time from the timing line
+    to grid 0. The curves are zero at grid 0, so the lap's time at the line is
+    simply its negative. Without it the start time is extrapolated at grid-0
+    speed across 35-188 m, which biased S1 and the lap by up to 0.25 s.
     """
     official = laps.copy()
     official["driver"] = official["driver"].astype(str)
@@ -62,7 +68,10 @@ def reconstruct_laps(
         v = np.where(speed_values[i, :n] > 0, speed_values[i, :n], np.nan)
         v = np.nan_to_num(v, nan=float(np.nanmedian(v)) if np.isfinite(v).any() else 1.0)
 
-        t_start = _time_at(d, t, v, d_start)
+        stretch = float(start_stretch[key]) if start_stretch is not None and key in start_stretch.index else float("nan")
+        from_samples = bool(np.isfinite(stretch))
+        # t(grid 0) == 0 by construction, so the line sits at -stretch.
+        t_start = -stretch if from_samples else _time_at(d, t, v, d_start)
         t_end = _time_at(d, t, v, d_end)
         t_s1 = _time_at(d, t, v, s1_m)
         t_s2 = _time_at(d, t, v, s2_m)
@@ -80,6 +89,8 @@ def reconstruct_laps(
                 "s2_official_s": float(record.get("sector2_time", np.nan)),
                 "s3_official_s": float(record.get("sector3_time", np.nan)),
                 "n_points": n,
+                "start_from_samples": from_samples,
+                "start_stretch_s": stretch,
                 "start_extrap_m": max(0.0, d[0] - d_start),
                 "end_extrap_m": max(0.0, d_end - d[-1]),
             }
