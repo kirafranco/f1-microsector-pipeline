@@ -325,3 +325,47 @@ class TestCriterionF023PartitionPruning:
         """The subquery is what makes the value a constant the planner can use."""
         for title, sql in self.partitioned_queries(dashboard):
             assert "FROM dim_session WHERE session_id" in sql, title
+
+
+class TestCriterionF024VariablesCannotGoStale:
+    """F024: `lap_id` is a surrogate key reassigned on every warehouse load, so
+    a selection saved in a browser goes stale. These two properties are what
+    stop a stale value emptying the dashboard, and they are asserted rather
+    than remembered.
+    """
+
+    #: Seeded so a fresh open lands on a real session with two real drivers.
+    SEEDED = {"session", "driver_a", "driver_b"}
+    #: Deliberately not seeded: a hardcoded lap id would rebuild the same trap
+    #: on the next reload. They chain off a valid session and driver instead.
+    UNSEEDED = {"lap_a", "lap_b"}
+
+    def query_variables(self, dashboard: dict) -> dict:
+        return {n: v for n, v in dash.variables(dashboard).items() if v["type"] == "query"}
+
+    def test_the_variable_list_is_the_one_this_rule_was_written_for(self, dashboard: dict) -> None:
+        assert set(self.query_variables(dashboard)) == self.SEEDED | self.UNSEEDED
+
+    def test_no_variable_keeps_a_value_outside_its_own_options(self, dashboard: dict) -> None:
+        """Grafana keeps an out-of-options value unless told not to, which is
+        exactly how a lap id that no longer exists survived a refresh."""
+        permissive = [n for n, v in self.query_variables(dashboard).items()
+                      if v.get("allowCustomValue", True) is not False]
+        assert permissive == [], f"these would keep a stale value: {permissive}"
+
+    def test_the_stable_variables_carry_a_default(self, dashboard: dict) -> None:
+        for name in self.SEEDED:
+            current = self.query_variables(dashboard)[name].get("current") or {}
+            assert current.get("value"), f"{name} has no seeded default"
+
+    def test_the_lap_variables_carry_none(self, dashboard: dict) -> None:
+        """A seeded lap id would be wrong again after the next load."""
+        for name in self.UNSEEDED:
+            current = self.query_variables(dashboard)[name].get("current") or {}
+            assert not current.get("value"), f"{name} seeds a lap id, which moves on every load"
+
+    def test_every_variable_still_refreshes_on_load(self, dashboard: dict) -> None:
+        """Without this the options are whatever was saved, and the fallback
+        above never gets a fresh list to fall back to."""
+        for name, v in self.query_variables(dashboard).items():
+            assert v.get("refresh") == 1, f"{name}: refresh={v.get('refresh')}"

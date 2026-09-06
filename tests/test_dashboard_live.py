@@ -356,3 +356,76 @@ WHERE a.season = s.season AND a.round = s.round AND a.session_code = s.session_c
   AND a.lap_id = $lap_a
   AND a.grid_index = (SELECT last_index FROM complete)
 """
+
+
+class TestCriterionF024ItOpensOnSomethingThatWorks:
+    """F024: the check the suite was missing.
+
+    Every other test here substitutes variables from the `resolved` fixture,
+    which is built to be self-consistent. That proves each panel *can* answer.
+    It never asks whether the dashboard's own default state resolves to a
+    combination that returns rows -- and a stale `lap_a`, left in a browser
+    from before a warehouse reload, is exactly a combination that does not.
+    Every panel then shows "No data" with nothing to say why.
+    """
+
+    def options(self, env):
+        """A `run_query` for `resolve_like_grafana`, backed by the datasource."""
+        def run(sql: str) -> list[tuple[str, str]]:
+            columns, _ = query(env, sql)
+            if not columns:
+                return []
+            names = list(columns)
+            value_key = "__value" if "__value" in names else names[0]
+            text_key = "__text" if "__text" in names else value_key
+            return list(zip(columns[value_key], columns[text_key]))
+        return run
+
+    def test_the_defaults_resolve_to_a_real_combination(self, env, dashboard: dict) -> None:
+        resolved = dash.resolve_like_grafana(dashboard, self.options(env))
+        assert set(resolved) == set(dash.variables(dashboard)), resolved
+        assert all(str(v).strip() for v in resolved.values()), resolved
+
+    def test_every_panel_returns_rows_for_those_defaults(self, env, dashboard: dict) -> None:
+        """Criterion 2: opening the dashboard must show data, not empty charts."""
+        resolved = dash.resolve_like_grafana(dashboard, self.options(env))
+        empty = []
+        for title, sql in dash.panel_sql(dashboard):
+            columns, _ = query(env, dash.substitute(sql, resolved))
+            rows = len(next(iter(columns.values()))) if columns else 0
+            if rows == 0:
+                empty.append(title)
+        assert empty == [], f"panels with no data on a default open: {empty}"
+
+    def test_a_stale_lap_is_discarded_rather_than_kept(self, env, dashboard: dict) -> None:
+        """Criterion 3, the failure Kira actually hit.
+
+        `lap_id` is a surrogate key reassigned on every warehouse load, so a
+        selection saved in a browser goes stale. Resolution has to drop a lap
+        that is not one of this driver's laps in this session.
+        """
+        import copy
+
+        stale = copy.deepcopy(dashboard)
+        for name in ("lap_a", "lap_b"):
+            dash.variables(stale)[name]["current"] = {"text": "L1", "value": "1"}
+        resolved = dash.resolve_like_grafana(stale, self.options(env))
+        assert resolved["lap_a"] != "1" and resolved["lap_b"] != "1", (
+            f"a lap id that does not exist survived resolution: {resolved}")
+
+        session, code = resolved["session"], resolved["driver_a"]
+        columns, _ = query(env, "SELECT lap_id FROM dim_lap WHERE session_id = "
+                                f"{session} AND code = '{code}'")
+        belong = {str(v) for v in next(iter(columns.values()))} if columns else set()
+        assert resolved["lap_a"] in belong, f"lap_a {resolved['lap_a']} is not {code}'s in session {session}"
+
+    def test_the_panels_answer_after_recovering_from_a_stale_lap(self, env, dashboard: dict) -> None:
+        import copy
+
+        stale = copy.deepcopy(dashboard)
+        dash.variables(stale)["lap_a"]["current"] = {"text": "L1", "value": "1"}
+        resolved = dash.resolve_like_grafana(stale, self.options(env))
+        overlay = next(sql for title, sql in dash.panel_sql(dashboard) if title == "Speed")
+        columns, _ = query(env, dash.substitute(overlay, resolved))
+        rows = len(next(iter(columns.values()))) if columns else 0
+        assert rows > 0, "recovered from a stale lap but the overlay still returns nothing"

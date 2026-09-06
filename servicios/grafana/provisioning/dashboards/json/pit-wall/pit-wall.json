@@ -2436,8 +2436,13 @@
         "includeAll": false,
         "hide": 0,
         "skipUrlSync": false,
-        "current": {},
-        "options": []
+        "current": {
+          "selected": false,
+          "text": "2024 R24 Q — Abu Dhabi Grand Prix",
+          "value": "39"
+        },
+        "options": [],
+        "allowCustomValue": false
       },
       {
         "name": "driver_a",
@@ -2457,8 +2462,13 @@
         "includeAll": false,
         "hide": 0,
         "skipUrlSync": false,
-        "current": {},
-        "options": []
+        "current": {
+          "selected": false,
+          "text": "NOR",
+          "value": "NOR"
+        },
+        "options": [],
+        "allowCustomValue": false
       },
       {
         "name": "driver_b",
@@ -2478,8 +2488,13 @@
         "includeAll": false,
         "hide": 0,
         "skipUrlSync": false,
-        "current": {},
-        "options": []
+        "current": {
+          "selected": false,
+          "text": "PIA",
+          "value": "PIA"
+        },
+        "options": [],
+        "allowCustomValue": false
       },
       {
         "name": "lap_a",
@@ -2500,7 +2515,8 @@
         "hide": 0,
         "skipUrlSync": false,
         "current": {},
-        "options": []
+        "options": [],
+        "allowCustomValue": false
       },
       {
         "name": "lap_b",
@@ -2521,7 +2537,8 @@
         "hide": 0,
         "skipUrlSync": false,
         "current": {},
-        "options": []
+        "options": [],
+        "allowCustomValue": false
       },
       {
         "name": "min_sector_m",
