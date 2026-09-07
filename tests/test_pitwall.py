@@ -182,16 +182,29 @@ class TestTheHtmlPage:
 
 
 class StubPool:
-    """Stands in for the connection pool, so the routes are testable offline."""
+    """Stands in for the connection pool, so the routes are testable offline.
+
+    It carries `close` because the app's lifespan closes the pool on shutdown;
+    without it the teardown raises and every route test errors.
+    """
 
     def __init__(self, overlay: queries.Overlay | None = None) -> None:
         self.overlay = overlay or designed_overlay()
         self.calls: list[str] = []
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
 
 
 @pytest.fixture
 def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     pool = StubPool()
+    # The app's lifespan opens a real connection pool. Without this the "offline"
+    # route tests quietly need a running Postgres -- they passed for as long as
+    # the stack happened to be up, and errored the moment it was not. Patching
+    # the builder keeps the lifespan intact while giving it the stub.
+    monkeypatch.setattr(queries, "build_pool", lambda *a, **k: pool)
     monkeypatch.setattr(app_module, "get_pool", lambda: pool)
     app_module.app.dependency_overrides[app_module.get_pool] = lambda: pool
     monkeypatch.setattr(queries, "sessions", lambda p: [(39, "2024 R24 Q — Abu Dhabi Grand Prix")])

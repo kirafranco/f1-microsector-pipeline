@@ -35,6 +35,9 @@ class TrackReference:
     circuit: str
     corners: pd.DataFrame  # number, letter, x, y, distance
     lap_length_m: float
+    #: The layout `lap_length_m` came from (F025). Optional so a designed
+    #: fixture can still build a reference without the reference layer.
+    layout: object | None = None
 
     def __post_init__(self) -> None:
         required = {"number", "x", "y", "distance"}
