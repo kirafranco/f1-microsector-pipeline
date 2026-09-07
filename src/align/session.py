@@ -14,7 +14,9 @@ from src.align import validation
 from src.align.circuits import (
     MAX_SCALE_ERROR_PCT,
     OFFICIAL_LENGTH_BAND_PCT,
-    official_lap_length_m,
+    Layout,
+    UnknownCircuitError,
+    resolve_layout,
 )
 from src.align.centreline import ReferenceLine, build_reference_line, project_lap
 from src.align.frame import RigidTransform, fit_corner_frame
@@ -102,16 +104,53 @@ class AlignmentResult:
         return self.laps_aligned / self.laps_total if self.laps_total else 0.0
 
 
-def load_track_reference(snapshot_root: Path) -> TrackReference:
+def session_layout(meta: dict, reference_root: Path | None = None) -> Layout:
+    """The circuit layout this session raced (F025).
+
+    The season and round come from the snapshot's own metadata; the stable
+    `circuit_id` comes from the reference layer, because FastF1's location
+    string is renamed between seasons and cannot key a table. A layout is not
+    guessed from the data: an unresolvable session fails and says what to add.
+    """
+    from src.reference.session import load_reference
+
+    season, round_number = meta.get("season"), meta.get("round_number")
+    event_name = meta.get("event_name")
+    if season is None or round_number is None:
+        raise UnknownCircuitError(
+            f"session_meta.json carries season={season!r} round_number={round_number!r}; "
+            "both are needed to resolve the circuit layout"
+        )
+
+    frames = load_reference(int(season), reference_root)
+    events = frames.get("dim_event")
+    if events is None or events.empty:
+        raise UnknownCircuitError(
+            f"no dim_event reference table for {season}; run the reference stage for that "
+            "season before aligning it (ingest_reference)"
+        )
+
+    match = events[events["round"].astype(int) == int(round_number)]
+    if match.empty:
+        raise UnknownCircuitError(
+            f"round {round_number} is not in the {season} reference table, which has "
+            f"rounds {sorted(events['round'].astype(int))}"
+        )
+    row = match.iloc[0]
+    return resolve_layout(int(season), str(row["circuit_id"]), event_name or str(row["event_name"]))
+
+
+def load_track_reference(snapshot_root: Path, reference_root: Path | None = None) -> TrackReference:
     corners = pd.read_parquet(snapshot_root / "circuit_corners.parquet")
     meta = json.loads((snapshot_root / "session_meta.json").read_text(encoding="utf-8"))
-    location = meta.get("location") or meta.get("event_name") or "unknown"
+    layout = session_layout(meta, reference_root)
     return TrackReference(
-        circuit=location,
+        circuit=meta.get("location") or meta.get("event_name") or layout.layout_id,
         # Corner X/Y arrive in the same 1/10 m units as position data; the
         # distance channel is already metres and is left alone.
         corners=positions_to_metres(corners),
-        lap_length_m=official_lap_length_m(location),
+        lap_length_m=layout.length_m,
+        layout=layout,
     )
 
 
