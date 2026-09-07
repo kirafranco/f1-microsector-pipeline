@@ -23,6 +23,9 @@ Thumbs.db
 # Local-only SDD state: external memory on disk, deliberately not versioned
 harness/
 docs/decisions.md
+# Kira's own handbook: how the project works and how to run it, written for
+# this machine rather than for a reader of the repository.
+docs/handbook.md
 
 # Published findings, local-only for now. The result itself is summarised in
 # README.md, which is where anything that must survive a fresh clone belongs.
